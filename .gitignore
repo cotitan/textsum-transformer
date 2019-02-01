@@ -1,0 +1,13 @@
+/data/*
+/models/*
+/.idea/*
+/.vscode/*
+/log
+/__pycache__/
+/*.tar.gz
+/sumdata
+/biendata
+/build_vocab_for_biendata.py
+*.bak
+*.pyc
+*~
