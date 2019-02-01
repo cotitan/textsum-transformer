@@ -314,7 +314,7 @@ class Transformer(nn.Module):
             self.x_logit_scale = 1.0
 
 
-        self.loss_layer = nn.CrossEntropyLoss(ignore_index=2) # 2==vocab['<pad>']
+        self.loss_layer = nn.CrossEntropyLoss(ignore_index=3) # 2==vocab['<pad>']
 
     def forward(self, src_seq, tgt_seq):
         tgt_seq = tgt_seq[:, :-1]
