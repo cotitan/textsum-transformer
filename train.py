@@ -103,16 +103,7 @@ def get_vocab(TRAIN_X, TRAIN_Y):
 	return src_vocab, tgt_vocab
 
 
-def main():
-	print(args)
-
-	N_EPOCHS = args.n_epochs
-	N_TRAIN = args.n_train
-	N_VALID = args.n_valid
-	BATCH_SIZE = args.batch_size
-	EMB_DIM = args.emb_dim
-	HID_DIM = args.hid_dim
-
+def load_datas():
 	data_dir = '/home/tiankeke/workspace/datas/sumdata/'
 	TRAIN_X = os.path.join(data_dir, 'train/train.article.txt')
 	TRAIN_Y = os.path.join(data_dir, 'train/train.title.txt')
@@ -121,14 +112,27 @@ def main():
 
 	src_vocab, tgt_vocab = get_vocab(TRAIN_X, TRAIN_Y)
 
-	train_x, max_src_len1 = BatchManager(load_data(TRAIN_X, src_vocab, N_TRAIN), BATCH_SIZE)
-	train_y, max_tgt_len1 = BatchManager(load_data(TRAIN_Y, tgt_vocab, N_TRAIN), BATCH_SIZE)
+	train_x, max_src_len1 = load_data(TRAIN_X, src_vocab, args.n_train)
+	train_y, max_tgt_len1 = load_data(TRAIN_Y, tgt_vocab, args.n_train)
 
-	valid_x, max_src_len2 = BatchManager(load_data(VALID_X, vocab, N_VALID), BATCH_SIZE)
-	valid_y, max_tgt_len2 = BatchManager(load_data(VALID_Y, vocab, N_VALID), BATCH_SIZE)
+	valid_x, max_src_len2 = load_data(VALID_X, src_vocab, args.n_valid)
+	valid_y, max_tgt_len2 = load_data(VALID_Y, tgt_vocab, args.n_valid)
 
 	max_src_len = max(max_src_len1, max_src_len2)
 	max_tgt_len = max(max_tgt_len1, max_tgt_len2)
+
+	train_x = BatchManager(train_x, args.batch_size)
+	train_y = BatchManager(train_y, args.batch_size)
+	valid_x = BatchManager(valid_x, args.batch_size)
+	valid_y = BatchManager(valid_y, args.batch_size)
+
+	return src_vocab, tgt_vocab, train_x, train_y, valid_x, valid_y, max_src_len, max_tgt_len
+
+
+def main():
+	print(args)
+
+	src_vocab, tgt_vocab, train_x, train_y, valid_x, valid_y, max_src_len, max_tgt_len = load_datas()
 
 	# model = Model(vocab, out_len=25, emb_dim=EMB_DIM, hid_dim=HID_DIM).cuda()
 	model = Transformer(len(src_vocab), len(tgt_vocab), max_src_len, max_tgt_len,
@@ -143,7 +147,7 @@ def main():
 	optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 	scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20000, gamma=0.3)
 
-	train(train_x, train_y, valid_x, valid_y, model, optimizer, scheduler, N_EPOCHS)
+	train(train_x, train_y, valid_x, valid_y, model, optimizer, scheduler, args.n_epochs)
 
 
 if __name__ == '__main__':
