@@ -1,4 +1,4 @@
-### Pytorch implementation for paper "Selective Encoding for Abstractive Sentence Summarization" (Haven't finish yet)
+### Transformer for text summarization, implemented in pytorch
 - author: Kirk
 - mail: cotitan@outlook.com
 
@@ -20,6 +20,7 @@ Training and evaluation data for CNN/DM is available https://s3.amazonaws.com/op
 .
 ├── Beam.py
 ├── Model.py
+├── Transformer.py
 ├── mytest.py
 ├── train.py
 ├── utils.py
@@ -39,5 +40,3 @@ Make sure your project contains the folders above.
 1. Run _python train.py_ to train, it takes about 3.5h per epoch.
 2. Run _python mytest.py_ to generate summaries
 
-### TODO
-1. learning rate decay, which is essential
