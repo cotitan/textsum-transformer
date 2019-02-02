@@ -5,6 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 import torch
 import threading
+import os
 
 start_tok = "<s>"
 end_tok = "</s>"
