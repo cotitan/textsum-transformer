@@ -97,6 +97,21 @@ def my_test(valid_x, model):
 	print("Done!")
 
 
+def get_vocab(TRAIN_X, TRAIN_Y):
+	src_vocab_file = "sumdata/src_vocab.json"
+	if not os.path.exists(src_vocab_file):
+		src_vocab = utils.build_vocab([TRAIN_X], src_vocab_file)
+	else:
+		src_vocab = json.load(open(src_vocab_file))
+
+	tgt_vocab_file = "sumdata/tgt_vocab.json"
+	if not os.path.exists(tgt_vocab_file):
+		tgt_vocab = utils.build_vocab([TRAIN_Y], tgt_vocab_file)
+	else:
+		tgt_vocab = json.load(open(tgt_vocab_file))
+	return src_vocab, tgt_vocab
+
+
 def load_datas():
 	data_dir = '/home/tiankeke/workspace/datas/sumdata/'
 	TRAIN_X = os.path.join(data_dir, 'train/train.article.txt')
