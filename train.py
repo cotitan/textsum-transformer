@@ -98,8 +98,8 @@ def main():
 	VALID_Y = os.path.join(data_dir, 'train/valid.title.filter.txt')
 	
 	src_vocab, tgt_vocab = get_vocab(TRAIN_X, TRAIN_Y)
-	max_src_len = 100
-	max_tgt_len = 30
+	max_src_len = 101
+	max_tgt_len = 47
 	
 	train_x = BatchManager(load_data(TRAIN_X, src_vocab, max_src_len, args.n_train), args.batch_size)
 	train_y = BatchManager(load_data(TRAIN_Y, tgt_vocab, max_tgt_len, args.n_train), args.batch_size)
