@@ -70,7 +70,7 @@ def train(train_x, train_y, valid_x, valid_y, model, optimizer, scheduler, epoch
 
 			loss = run_batch(train_x, train_y, model)
 			loss.backward()  # do not use retain_graph=True
-			print(model.decoder.embedding.word_embeddings.weight.grad)
+			# print(model.decoder.embedding.word_embeddings.weight.grad)
 			# torch.nn.utils.clip_grad_value_(model.parameters(), 5)
 
 			optimizer.step()
