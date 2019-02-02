@@ -135,7 +135,8 @@ class MultiHeadAttention(nn.Module):
             Ks = [Wk(k) for Wk in self.W_K]
             Vs = [Wv(v) for Wv in self.W_V]
         except Exception as e:
-            print(self.W_Q[0].weight.shape)
+            for q in Qs:
+                print(q.shape)
             print(e)
 
         heads = [self.attn_layer(Qs[i], Ks[i], Vs[i], mask) for i in range(self.n_head)]
