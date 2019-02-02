@@ -48,6 +48,7 @@ def greedy(model, x, tgt_vocab, max_trg_len=15):
 	y[:,0] = tgt_vocab["<s>"]
 	print(x.shape, y.shape)
 	for i in range(max_trg_len-1):
+		print(i)
 		logits = model(x, y)
 		y[:,i+1] = torch.argmax(logits[:,i,:])
 	return y
@@ -100,12 +101,10 @@ def my_test(valid_x, model, tgt_vocab):
 
 
 def main():
-	print(args)
-	
 	data_dir = '/home/tiankeke/workspace/datas/sumdata/'
 	TRAIN_X = os.path.join(data_dir, 'train/train.article.txt')
 	TRAIN_Y = os.path.join(data_dir, 'train/train.title.txt')
-	TEST_X = "/home/tiankeke/workspace/datas/sumdata/Giga/input.txt"
+	TEST_X = os.path.join(data_dir, "Giga/input.txt")
 	
 	src_vocab, tgt_vocab = get_vocab(TRAIN_X, TRAIN_Y)
 	max_src_len = 101
