@@ -4,6 +4,7 @@ import torch
 import argparse
 import numpy as np
 from utils import BatchManager, load_data
+from Transformer import Transformer
 from Model import Model
 from Beam import Beam
 import torch.nn.functional as F
