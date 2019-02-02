@@ -48,7 +48,7 @@ def greedy(model, x, tgt_vocab, max_trg_len=15):
 	y[:,0] = tgt_vocab["<s>"]
 	for i in range(max_trg_len-1):
 		logits = model(x, y)
-		y[:,i+1] = torch.argmax(logits[:,i,:])
+		y[:,i+1] = torch.argmax(logits[:,i,:], dim=-1)
 	return y
 
 
