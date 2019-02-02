@@ -109,7 +109,7 @@ def main():
 	max_src_len = 101
 	max_tgt_len = 47
 	
-	test_x = BatchManager(load_data(TEST_X, src_vocab, max_src_len, args.n_test))
+	test_x = BatchManager(load_data(TEST_X, src_vocab, max_src_len, args.n_test), args.batch_size)
 	
 	model = Transformer(len(src_vocab), len(tgt_vocab), max_src_len, max_tgt_len,
 			d_word_vec=300, N=6, n_head=3, d_q=100, d_k=100, d_v=100, d_model=300, d_inner=600,
