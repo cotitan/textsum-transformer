@@ -111,7 +111,7 @@ def main():
 	model = Transformer(len(src_vocab), len(tgt_vocab), max_src_len, max_tgt_len,
 			d_word_vec=300, N=6, n_head=3, d_q=100, d_k=100, d_v=100, d_model=300, d_inner=600,
 			dropout=0.1, tgt_emb_prj_weight_share=True).cuda()
-
+	print(model)
 	model_file = args.model_file
 	if os.path.exists(model_file):
 		model.load_state_dict(torch.load(model_file))
