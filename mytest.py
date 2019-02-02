@@ -10,7 +10,7 @@ import torch.nn.functional as F
 
 parser = argparse.ArgumentParser(description='Selective Encoding for Abstractive Sentence Summarization in pytorch')
 
-parser.add_argument('--n_valid', type=int, default=189651,
+parser.add_argument('--n_test', type=int, default=1951,
 					help='Number of validation data (up to 189651 in gigaword) [default: 189651])')
 parser.add_argument('--input_file', type=str, default="sumdata/Giga/input.txt", help='input file')
 parser.add_argument('--output_dir', type=str, default="sumdata/Giga/systems/", help='')
@@ -41,17 +41,14 @@ def print_summaries(summaries, vocab):
 		fout.close()
 
 
-def greedy(model, batch_x, max_trg_len=10):
-	enc_outs, hidden = model.encode(batch_x)
-	hidden = model.init_decoder_hidden(hidden)
-	
-	words = []
-	word = torch.ones(hidden.shape[1], dtype=torch.long).cuda() * model.vocab["<s>"]
-	for _ in range(max_trg_len):
-		logit, hidden = model.decode(word, enc_outs, hidden)
-		word = torch.argmax(logit, dim=-1)
-		words.append(word.cpu().numpy())
-	return np.array(words).T
+def greedy(model, x, max_trg_len=15):
+
+	y = torch.ones(x.shape[0], max_trg_len, dtype=torch.long).cuda() * model.tgt_vocab["<pad>"]
+	y[:,0] = model.tgt_vocab["<s>"]
+	for i in range(max_trg_len-1):
+		logits = model(x, y)
+		y[:,i+1] = torch.argmax(logits[:,i,:])
+	return y
 
 
 def beam_search(model, batch_x, max_trg_len=10, k=args.beam_width):
@@ -101,17 +98,15 @@ def my_test(valid_x, model):
 
 
 def main():
+	TEST_X = "/home/tiankeke/workspace/datas/sumdata/Giga/input.txt"
 
-	N_VALID = args.n_valid
-	BATCH_SIZE = args.batch_size
-	EMB_DIM = args.emb_dim
-	HID_DIM = args.hid_dim
+	src_vocab, tgt_vocab, _, _, _, _, max_src_len, max_tgt_len = load_datas()
+	test_x, _ = utils.load_data(TEST_X, src_vocab)
+	test_x = BatchManager(test_x, args.batch_size)
 
-	vocab = json.load(open('sumdata/vocab.json'))
-	valid_x = BatchManager(load_data(args.input_file, vocab, N_VALID), BATCH_SIZE)
-
-	# model = Seq2SeqAttention(len(vocab), EMB_DIM, HID_DIM, BATCH_SIZE, vocab, max_trg_len=25).cuda()
-	model = Model(vocab, out_len=15, emb_dim=EMB_DIM, hid_dim=HID_DIM).cuda()
+	model = Transformer(len(src_vocab), len(tgt_vocab), max_src_len, max_tgt_len,
+			d_word_vec=300, N=6, n_head=3, d_q=100, d_k=100, d_v=100, d_model=300, d_inner=600,
+			dropout=0.1, tgt_emb_prj_weight_share=True).cuda()
 	model.eval()
 
 	file = args.model_file
@@ -119,7 +114,7 @@ def main():
 		model.load_state_dict(torch.load(file))
 		print('Load model parameters from %s' % file)
 
-	my_test(valid_x, model)
+	my_test(test_x, model)
 
 
 if __name__ == '__main__':
