@@ -97,6 +97,32 @@ def my_test(valid_x, model):
 	print("Done!")
 
 
+def load_datas():
+	data_dir = '/home/tiankeke/workspace/datas/sumdata/'
+	TRAIN_X = os.path.join(data_dir, 'train/train.article.txt')
+	TRAIN_Y = os.path.join(data_dir, 'train/train.title.txt')
+	VALID_X = os.path.join(data_dir, 'train/valid.article.filter.txt')
+	VALID_Y = os.path.join(data_dir, 'train/valid.title.filter.txt')
+
+	src_vocab, tgt_vocab = get_vocab(TRAIN_X, TRAIN_Y)
+
+	train_x, max_src_len1 = load_data(TRAIN_X, src_vocab, args.n_train)
+	train_y, max_tgt_len1 = load_data(TRAIN_Y, tgt_vocab, args.n_train)
+
+	valid_x, max_src_len2 = load_data(VALID_X, src_vocab, args.n_valid)
+	valid_y, max_tgt_len2 = load_data(VALID_Y, tgt_vocab, args.n_valid)
+
+	max_src_len = max(max_src_len1, max_src_len2)
+	max_tgt_len = max(max_tgt_len1, max_tgt_len2)
+
+	train_x = BatchManager(train_x, args.batch_size)
+	train_y = BatchManager(train_y, args.batch_size)
+	valid_x = BatchManager(valid_x, args.batch_size)
+	valid_y = BatchManager(valid_y, args.batch_size)
+
+	return src_vocab, tgt_vocab, train_x, train_y, valid_x, valid_y, max_src_len, max_tgt_len
+
+
 def main():
 	TEST_X = "/home/tiankeke/workspace/datas/sumdata/Giga/input.txt"
 
