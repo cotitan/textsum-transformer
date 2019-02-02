@@ -142,7 +142,7 @@ def main():
 	TEST_X = "/home/tiankeke/workspace/datas/sumdata/Giga/input.txt"
 
 	src_vocab, tgt_vocab, _, _, _, _, max_src_len, max_tgt_len = load_datas()
-	test_x, _ = utils.load_data(TEST_X, src_vocab)
+	test_x, _ = load_data(TEST_X, src_vocab)
 	test_x = BatchManager(test_x, args.batch_size)
 
 	model = Transformer(len(src_vocab), len(tgt_vocab), max_src_len, max_tgt_len,
