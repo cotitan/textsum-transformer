@@ -207,9 +207,7 @@ class Encoder(nn.Module):
 
         # batch*seqlen ==> batch*seqlen*emb
         enc_output = self.embedding(src_seq)
-        print("")
         for layer in self.layers:
-            print(enc_output.shape)
             enc_output, enc_slf_attn = layer(enc_output)
             enc_output_list.append(enc_output)
             if return_attns:
