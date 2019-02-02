@@ -87,7 +87,6 @@ def my_test(valid_x, model, tgt_vocab):
 	with torch.no_grad():
 		for _ in range(valid_x.steps):
 			batch_x = valid_x.next_batch().cuda()
-			print(batch_x.shape)
 			if args.search == "greedy":
 				summary = greedy(model, batch_x, tgt_vocab)
 			elif args.search == "beam":
