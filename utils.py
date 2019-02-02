@@ -146,6 +146,7 @@ def load_data(filename, vocab, max_len, n_data=None, target=False):
             break
         words = line.strip().split()
         # if target:
+        print(len(words), max_len)
         if len(words) > max_len - 2:
             words = words[:max_len-2]
         words = ['<s>'] + words + ['</s>']
