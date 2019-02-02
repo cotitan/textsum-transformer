@@ -121,11 +121,11 @@ def load_datas():
 
 	src_vocab, tgt_vocab = get_vocab(TRAIN_X, TRAIN_Y)
 
-	train_x, max_src_len1 = load_data(TRAIN_X, src_vocab, args.n_train)
-	train_y, max_tgt_len1 = load_data(TRAIN_Y, tgt_vocab, args.n_train)
+	train_x, max_src_len1 = load_data(TRAIN_X, src_vocab)
+	train_y, max_tgt_len1 = load_data(TRAIN_Y, tgt_vocab)
 
-	valid_x, max_src_len2 = load_data(VALID_X, src_vocab, args.n_valid)
-	valid_y, max_tgt_len2 = load_data(VALID_Y, tgt_vocab, args.n_valid)
+	valid_x, max_src_len2 = load_data(VALID_X, src_vocab)
+	valid_y, max_tgt_len2 = load_data(VALID_Y, tgt_vocab)
 
 	max_src_len = max(max_src_len1, max_src_len2)
 	max_tgt_len = max(max_tgt_len1, max_tgt_len2)
