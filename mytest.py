@@ -42,10 +42,10 @@ def print_summaries(summaries, vocab):
 		fout.close()
 
 
-def greedy(model, x, max_trg_len=15):
+def greedy(model, x, max_trg_len=15, tgt_vocab):
 
-	y = torch.ones(x.shape[0], max_trg_len, dtype=torch.long).cuda() * model.tgt_vocab["<pad>"]
-	y[:,0] = model.tgt_vocab["<s>"]
+	y = torch.ones(x.shape[0], max_trg_len, dtype=torch.long).cuda() * tgt_vocab["<pad>"]
+	y[:,0] = tgt_vocab["<s>"]
 	for i in range(max_trg_len-1):
 		logits = model(x, y)
 		y[:,i+1] = torch.argmax(logits[:,i,:])
@@ -82,19 +82,19 @@ def beam_search(model, batch_x, max_trg_len=10, k=args.beam_width):
 	return allHyp
 
 
-def my_test(valid_x, model):
+def my_test(valid_x, model, tgt_vocab):
 	summaries = []
 	with torch.no_grad():
 		for _ in range(valid_x.steps):
 			batch_x = valid_x.next_batch().cuda()
 			if args.search == "greedy":
-				summary = greedy(model, batch_x)
+				summary = greedy(model, batch_x, tgt_vocab)
 			elif args.search == "beam":
 				summary = beam_search(model, batch_x)
 			else:
 				raise NameError("Unknown search method")
 			summaries.extend(summary)
-	print_summaries(summaries, model.vocab)
+	print_summaries(summaries, tgt_vocab)
 	print("Done!")
 
 
@@ -156,7 +156,7 @@ def main():
 		model.load_state_dict(torch.load(file))
 		print('Load model parameters from %s' % file)
 
-	my_test(test_x, model)
+	my_test(test_x, model, tgt_vocab)
 
 
 if __name__ == '__main__':
