@@ -3,7 +3,7 @@ import json
 import torch
 import argparse
 import numpy as np
-from utils import BatchManager, load_data
+from utils import BatchManager, load_data, get_vocab
 from Transformer import Transformer
 from Model import Model
 from Beam import Beam
@@ -98,54 +98,20 @@ def my_test(valid_x, model, tgt_vocab):
 	print("Done!")
 
 
-def get_vocab(TRAIN_X, TRAIN_Y):
-	src_vocab_file = "sumdata/src_vocab.json"
-	if not os.path.exists(src_vocab_file):
-		src_vocab = utils.build_vocab([TRAIN_X], src_vocab_file)
-	else:
-		src_vocab = json.load(open(src_vocab_file))
-
-	tgt_vocab_file = "sumdata/tgt_vocab.json"
-	if not os.path.exists(tgt_vocab_file):
-		tgt_vocab = utils.build_vocab([TRAIN_Y], tgt_vocab_file)
-	else:
-		tgt_vocab = json.load(open(tgt_vocab_file))
-	return src_vocab, tgt_vocab
-
-
-def load_datas():
+def main():
+	print(args)
+	
 	data_dir = '/home/tiankeke/workspace/datas/sumdata/'
 	TRAIN_X = os.path.join(data_dir, 'train/train.article.txt')
 	TRAIN_Y = os.path.join(data_dir, 'train/train.title.txt')
-	VALID_X = os.path.join(data_dir, 'train/valid.article.filter.txt')
-	VALID_Y = os.path.join(data_dir, 'train/valid.title.filter.txt')
-
-	src_vocab, tgt_vocab = get_vocab(TRAIN_X, TRAIN_Y)
-
-	train_x, max_src_len1 = load_data(TRAIN_X, src_vocab)
-	train_y, max_tgt_len1 = load_data(TRAIN_Y, tgt_vocab)
-
-	valid_x, max_src_len2 = load_data(VALID_X, src_vocab)
-	valid_y, max_tgt_len2 = load_data(VALID_Y, tgt_vocab)
-
-	max_src_len = max(max_src_len1, max_src_len2)
-	max_tgt_len = max(max_tgt_len1, max_tgt_len2)
-
-	train_x = BatchManager(train_x, args.batch_size)
-	train_y = BatchManager(train_y, args.batch_size)
-	valid_x = BatchManager(valid_x, args.batch_size)
-	valid_y = BatchManager(valid_y, args.batch_size)
-
-	return src_vocab, tgt_vocab, train_x, train_y, valid_x, valid_y, max_src_len, max_tgt_len
-
-
-def main():
 	TEST_X = "/home/tiankeke/workspace/datas/sumdata/Giga/input.txt"
-
-	src_vocab, tgt_vocab, _, _, _, _, max_src_len, max_tgt_len = load_datas()
-	test_x, _ = load_data(TEST_X, src_vocab)
-	test_x = BatchManager(test_x, args.batch_size)
-
+	
+	src_vocab, tgt_vocab = get_vocab(TRAIN_X, TRAIN_Y)
+	max_src_len = 100
+	max_tgt_len = 30
+	
+	test_x = BatchManager(load_data(TEST_X, src_vocab, max_src_len, args.n_test), args.batch_size)
+	
 	model = Transformer(len(src_vocab), len(tgt_vocab), max_src_len, max_tgt_len,
 			d_word_vec=300, N=6, n_head=3, d_q=100, d_k=100, d_v=100, d_model=300, d_inner=600,
 			dropout=0.1, tgt_emb_prj_weight_share=True).cuda()

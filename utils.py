@@ -121,21 +121,37 @@ def build_vocab_from_embeddings(embedding_path, data_file_list):
     return vocab
 
 
-def load_data(filename, vocab, n_data=None, target=False):
+def get_vocab(TRAIN_X, TRAIN_Y):
+	src_vocab_file = "sumdata/src_vocab.json"
+	if not os.path.exists(src_vocab_file):
+		src_vocab = utils.build_vocab([TRAIN_X], src_vocab_file)
+	else:
+		src_vocab = json.load(open(src_vocab_file))
+
+	tgt_vocab_file = "sumdata/tgt_vocab.json"
+	if not os.path.exists(tgt_vocab_file):
+		tgt_vocab = utils.build_vocab([TRAIN_Y], tgt_vocab_file)
+	else:
+		tgt_vocab = json.load(open(tgt_vocab_file))
+	return src_vocab, tgt_vocab
+
+
+
+def load_data(filename, vocab, max_len, n_data=None, target=False):
     fin = open(filename, "r", encoding="utf8")
     datas = []
-    max_len = 0
     for idx, line in enumerate(fin):
         if idx == n_data or line == '':
             break
         words = line.strip().split()
         # if target:
+        if len(words) > max_len - 2:
+            words = words[:max_len-2]
         words = ['<s>'] + words + ['</s>']
-        max_len = max(max_len, len(words))
         sample = [vocab[w if w in vocab else unk_tok] for w in words]
         sample = [vocab.get(w, vocab[unk_tok]) for w in words]
         datas.append(sample)
-    return datas, max_len
+    return datas
 
 
 class MyDatasets(Dataset):
