@@ -49,7 +49,7 @@ def greedy(model, x, tgt_vocab, max_trg_len=15):
 	for i in range(max_trg_len-1):
 		logits = model(x, y)
 		y[:,i+1] = torch.argmax(logits[:,i,:], dim=-1)
-	return y
+	return y.detach().cpu().tolist()
 
 
 def beam_search(model, batch_x, max_trg_len=10, k=args.beam_width):
