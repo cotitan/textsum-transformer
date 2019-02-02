@@ -118,7 +118,7 @@ def main():
 		logging.info('Load model parameters from %s' % model_file)
 
 	parameters = filter(lambda p : p.requires_grad, model.parameters())
-	optimizer = torch.optim.Adam(parameters, lr=0.001)
+	optimizer = torch.optim.Adam(parameters, lr=0.1)
 	scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20000, gamma=0.3)
 
 	train(train_x, train_y, valid_x, valid_y, model, optimizer, scheduler, args.n_epochs)
