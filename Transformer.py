@@ -129,7 +129,6 @@ class MultiHeadAttention(nn.Module):
         self.layer_norm = nn.LayerNorm(d_model)
     
     def forward(self, q, k, v, mask=None):
-        print(q.shape, k.shape, v.shape)
         Qs = [Wq(q) for Wq in self.W_Q]
         Ks = [Wk(k) for Wk in self.W_K]
         Vs = [Wv(v) for Wv in self.W_V]
