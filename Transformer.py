@@ -130,14 +130,9 @@ class MultiHeadAttention(nn.Module):
     
     def forward(self, q, k, v, mask=None):
         print(q.shape, k.shape, v.shape)
-        try:
-            Qs = [Wq(q) for Wq in self.W_Q]
-            Ks = [Wk(k) for Wk in self.W_K]
-            Vs = [Wv(v) for Wv in self.W_V]
-        except Exception as e:
-            for q in Qs:
-                print(q.shape)
-            print(e)
+        Qs = [Wq(q) for Wq in self.W_Q]
+        Ks = [Wk(k) for Wk in self.W_K]
+        Vs = [Wv(v) for Wv in self.W_V]
 
         heads = [self.attn_layer(Qs[i], Ks[i], Vs[i], mask) for i in range(self.n_head)]
         output = torch.cat([x[0] for x in heads], dim=-1)
