@@ -71,7 +71,7 @@ class Embedding(nn.Module):
             self.word_embeddings = nn.Embedding(n_vocab, emb_size)
 
         self.position_embeddings = nn.Embedding.from_pretrained(
-            get_sinusoid_encoding_table(max_seq_len, emb_size), freeze=True)
+            get_sinusoid_encoding_table(max_seq_len, emb_size))
 
         # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
         # any TensorFlow checkpoint file
