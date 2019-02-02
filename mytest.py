@@ -47,8 +47,6 @@ def greedy(model, x, tgt_vocab, max_trg_len=15):
 	y = torch.ones(x.shape[0], max_trg_len, dtype=torch.long).cuda() * tgt_vocab["<pad>"]
 	y[:,0] = tgt_vocab["<s>"]
 	for i in range(max_trg_len-1):
-		print(i)
-		print(x.shape, y.shape)
 		logits = model(x, y)
 		y[:,i+1] = torch.argmax(logits[:,i,:])
 	return y
