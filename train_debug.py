@@ -14,18 +14,18 @@ parser.add_argument('--n_train', type=int, default=3803900,
                     help='Number of training data (up to 3803957 in gigaword) [default: 3803957]')
 parser.add_argument('--n_valid', type=int, default=189651,
                     help='Number of validation data (up to 189651 in gigaword) [default: 189651])')
-parser.add_argument('--batch_size', type=int, default=64, help='Mini batch size [default: 32]')
+parser.add_argument('--batch_size', type=int, default=32, help='Mini batch size [default: 32]')
 parser.add_argument('--emb_dim', type=int, default=300, help='Embedding size [default: 256]')
 parser.add_argument('--hid_dim', type=int, default=512, help='Hidden state size [default: 256]')
 parser.add_argument('--maxout_dim', type=int, default=2, help='Maxout size [default: 2]')
-parser.add_argument('--model_file', type=str, default='./models/params_0.pkl')
+parser.add_argument('--model_file', type=str, default='./models/params_debug_3.pkl')
 args = parser.parse_args()
 
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    filename='log/train.log',
+    filename='log/train1.log',
     filemode='w'
 )
 
@@ -57,7 +57,7 @@ def run_batch(valid_x, valid_y, model):
     loss = 0
     for i in range(y.shape[0]):
         loss += model.loss_layer(logits[i], y[i,1:])
-    loss /= y.shape[0] # y.shape[1] == out_seq_len
+    loss /= y.shape[0]  # y.shape[1] == out_seq_len
     return loss
 
 
@@ -82,12 +82,11 @@ def train(train_x, train_y, valid_x, valid_y, model, optimizer, scheduler, epoch
                     valid_loss = run_batch(valid_x, valid_y, model)
                 logging.info('epoch %d, step %d, training loss = %f, validation loss = %f'
                              % (epoch, idx + 1, train_loss, valid_loss))
-            del loss
 
-        model.cpu()
-        torch.save(model.state_dict(), os.path.join(model_dir, 'params_%d.pkl' % epoch))
+        # model.cpu()
+        torch.save(model.state_dict(), os.path.join(model_dir, 'params_debug_%d.pkl' % epoch))
         logging.info('Model saved in dir %s' % model_dir)
-        model.cuda()
+        # model.cuda()
         # model.embedding_look_up.to(torch.device("cpu"))
 
 
@@ -119,7 +118,7 @@ def main():
     # model = TransformerShareEmbedding(len(small_vocab), len(small_vocab), max_src_len, max_tgt_len,
     #         d_word_vec=300, n_layer=6, n_head=6, d_q=50, d_k=50, d_v=50, d_model=300, d_ff=1200,
     #         dropout=0.1, tgt_emb_prj_weight_share=False).cuda()
-    model = TransformerShareEmbedding(len(small_vocab), max_src_len, 1, 6, 300, 50, 50, 1200).cuda()
+    model = TransformerShareEmbedding(len(small_vocab), max_src_len, 2, 6, 300, 50, 50, 1200).cuda()
     # model = TransformerShareEmbedding(len(small_vocab), max_src_len, 2, 8, 512, 64, 64, 2048).cuda()
     # model = Transformer(len(src_vocab), len(tgt_vocab), max_src_len, max_tgt_len, 6, 8, 512, 64, 64, 2048).cuda()
 

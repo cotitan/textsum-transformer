@@ -18,6 +18,7 @@ unk_tok in the test data, then your prediction would be regard as correct,
 but since unk_tok is unknown, it's impossible to give a correct prediction
 """
 
+
 def my_pad_sequence(batch, pad_value):
     max_len = max([len(b) for b in batch])
     batch = [b + [pad_value] * (max_len - len(b)) for b in batch]
@@ -25,24 +26,26 @@ def my_pad_sequence(batch, pad_value):
 
 
 class BatchManager:
-    def __init__(self, datas, batch_size):
-        self.steps = int(len(datas) / batch_size)
+    def __init__(self, data, batch_size):
+        self.steps = int(len(data) / batch_size)
         # comment following two lines to neglect the last batch
-        if self.steps * batch_size < len(datas):
-           self.steps += 1
-        self.datas = datas
+        if self.steps * batch_size < len(data):
+            self.steps += 1
+        self.data = data
         self.batch_size = batch_size
         self.bid = 0
-        self.buffer = []
-        self.s1 = threading.Semaphore(1)
-        self.t1 = threading.Thread(target=self.loader, args=())
-        self.t1.start()
+
+        """ for multi-thread reading """
+        # self.buffer = []
+        # self.s1 = threading.Semaphore(1)
+        # self.t1 = threading.Thread(target=self.loader, args=())
+        # self.t1.start()
 
     def loader(self):
         while True:
             # generate next batch only when buffer is empty()
             self.s1.acquire()
-            batch = list(self.datas[self.bid * self.batch_size: (self.bid + 1) * self.batch_size])
+            batch = list(self.data[self.bid * self.batch_size: (self.bid + 1) * self.batch_size])
             # batch = collate_fn(batch, pad_value=3)
             batch = my_pad_sequence(batch, 3)
             self.bid += 1
@@ -51,14 +54,15 @@ class BatchManager:
             self.buffer.append(batch)
 
     def next_batch(self):
-        # batch = list(self.datas[self.bid * self.batch_size: (self.bid + 1) * self.batch_size])
-        # # batch = collate_fn(batch, pad_value=3)
-        # batch = my_pad_sequence(batch, 3)
-        # self.bid += 1
-        # if self.bid == self.steps:
-        #     self.bid = 0
-        batch = self.buffer.pop()
-        self.s1.release()
+        batch = list(self.data[self.bid * self.batch_size: (self.bid + 1) * self.batch_size])
+        batch = my_pad_sequence(batch, 3)
+        self.bid += 1
+        if self.bid == self.steps:
+            self.bid = 0
+
+        """ for multi-thread reading """
+        # batch = self.buffer.pop()
+        # self.s1.release()
         return batch
 
 
@@ -78,24 +82,28 @@ class myCollate:
 
 
 def build_vocab(filelist=['sumdata/train/train.article.txt', 'sumdata/train/train.title.txt'],
-                vocab_file='sumdata/vocab.json', min_count=0):
+                vocab_file='sumdata/vocab.json', min_count=0, vocab_size=1e9):
     print("Building vocab with min_count=%d..." % min_count)
-    freq = defaultdict(int)
+    word_freq = defaultdict(int)
     for file in filelist:
         fin = open(file, "r", encoding="utf8")
         for _, line in enumerate(fin):
             for word in line.strip().split():
-                freq[word] += 1
+                word_freq[word] += 1
         fin.close()
-    print('Number of all words: %d' % len(freq))
-    
+    print('Number of all words: %d' % len(word_freq))
+
+    if unk_tok in word_freq:
+        word_freq.pop(unk_tok)
+    sorted_freq = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
+
     vocab = {start_tok: 0, end_tok: 1, unk_tok: 2, pad_tok: 3}
-    if unk_tok in freq:
-        freq.pop(unk_tok)
-    for word in freq:
-        if freq[word] > min_count:
+    for word, freq in sorted_freq:
+        if freq > min_count:
             vocab[word] = len(vocab)
-    print('Number of filtered words: %d, %f%% ' % (len(vocab), len(vocab)/len(freq)*100))
+        if len(vocab) == vocab_size:
+            break
+    print('Number of filtered words: %d, %f%% ' % (len(vocab), len(vocab)/len(word_freq)*100))
 
     json.dump(vocab, open(vocab_file,'w'))
     return vocab
@@ -137,7 +145,6 @@ def get_vocab(TRAIN_X, TRAIN_Y):
 	return src_vocab, tgt_vocab
 
 
-
 def load_data(filename, vocab, max_len, n_data=None, target=False):
     fin = open(filename, "r", encoding="utf8")
     datas = []
@@ -148,7 +155,6 @@ def load_data(filename, vocab, max_len, n_data=None, target=False):
         if len(words) > max_len - 2:
             words = words[:max_len-2]
         words = ['<s>'] + words + ['</s>']
-        sample = [vocab[w if w in vocab else unk_tok] for w in words]
         sample = [vocab.get(w, vocab[unk_tok]) for w in words]
         datas.append(sample)
     return datas
