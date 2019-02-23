@@ -2,9 +2,9 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import numpy as np
+import config
 
-
-PAD_INDEX = 3
+pad_index = config.pad_index
 
 
 def get_attn_mask(seq_q, seq_k):
@@ -13,7 +13,7 @@ def get_attn_mask(seq_q, seq_k):
     :param seq_k: [batch, l_k]
     """
     l_q = seq_q.size(-1)
-    mask = seq_k.eq(PAD_INDEX).unsqueeze(1).expand(-1, l_q, -1)
+    mask = seq_k.eq(pad_index).unsqueeze(1).expand(-1, l_q, -1)
     return mask
 
 
@@ -156,9 +156,10 @@ class EncoderLayer(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, n_vocab, max_seq_len, n_layer, n_head, d_k, d_v, d_model, d_inner, dropout=0.1):
+    def __init__(self, n_vocab, max_seq_len, n_layer, n_head,
+                 d_k, d_v, d_model, d_inner, dropout=0.1, embeddings=None):
         super(Encoder, self).__init__()
-        self.embedding = Embedding(n_vocab, d_model, max_seq_len)
+        self.embedding = Embedding(n_vocab, d_model, max_seq_len, embeddings)
         self.layers = nn.ModuleList(
             [EncoderLayer(n_head, d_k, d_v, d_model, d_inner, dropout) for _ in range(n_layer)]
         )
@@ -200,9 +201,10 @@ class DecoderLayer(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, n_vocab, max_seq_len, n_layers, n_head, d_k, d_v, d_model, d_inner, dropout=0.1):
+    def __init__(self, n_vocab, max_seq_len, n_layers, n_head,
+                 d_k, d_v, d_model, d_inner, dropout=0.1, embeddings=None):
         super(Decoder, self).__init__()
-        self.embedding = Embedding(n_vocab, d_model, max_seq_len)
+        self.embedding = Embedding(n_vocab, d_model, max_seq_len, embeddings)
         self.layers = nn.ModuleList(
             [DecoderLayer(n_head, d_k, d_v, d_model, d_inner, dropout) for _ in range(n_layers)]
         )
@@ -231,13 +233,15 @@ class Decoder(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, n_src_vocab, n_tgt_vocab, max_src_len, max_tgt_len,
-                 n_layer, n_head, d_model, d_k, d_v, d_inner,
+    def __init__(self, n_src_vocab, n_tgt_vocab, max_src_len, max_tgt_len, n_layer,
+                 n_head, d_model, d_k, d_v, d_inner, dropout=0.1, embeddings=None,
                  src_tgt_emb_share=True, tgt_prj_emb_share=True):
         super(Transformer, self).__init__()
 
-        self.encoder = Encoder(n_src_vocab, max_src_len, n_layer, n_head, d_k, d_v, d_model, d_inner)
-        self.decoder = Decoder(n_tgt_vocab, max_tgt_len, n_layer, n_head, d_k, d_v, d_model, d_inner)
+        self.encoder = Encoder(n_src_vocab, max_src_len, n_layer, n_head,
+                               d_k, d_v, d_model, d_inner, dropout, embeddings)
+        self.decoder = Decoder(n_tgt_vocab, max_tgt_len, n_layer, n_head,
+                               d_k, d_v, d_model, d_inner, dropout, embeddings)
     
         self.softmax = nn.Softmax(dim=-1)
         self.tgt_word_proj = nn.Linear(d_model, n_tgt_vocab, bias=False)
@@ -254,7 +258,7 @@ class Transformer(nn.Module):
         else:
             self.logit_scale = 1.
 
-        self.loss_layer = nn.CrossEntropyLoss(ignore_index=PAD_INDEX)
+        self.loss_layer = nn.CrossEntropyLoss(ignore_index=pad_index)
 
     def forward(self, src_seq, tgt_seq):
         tgt_seq = tgt_seq[:, :-1]
@@ -338,7 +342,7 @@ class TransformerShareEmbedding(nn.Module):
             self.tgt_word_proj = nn.Linear(d_model, n_vocab)
             self.logit_scale = 1.
 
-        self.loss_layer = nn.CrossEntropyLoss(ignore_index=PAD_INDEX)
+        self.loss_layer = nn.CrossEntropyLoss(ignore_index=pad_index)
 
     def forward(self, src_seq, tgt_seq):
         tgt_seq = tgt_seq[:, :-1]

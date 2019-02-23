@@ -6,7 +6,7 @@ import torch
 import argparse
 from Transformer import Transformer, TransformerShareEmbedding
 from tensorboardX import SummaryWriter
-from utils import BatchManager, load_data, get_vocab, build_vocab
+from utils import BatchManager, load_data, get_vocab, build_vocab, load_word2vec_embedding
 
 parser = argparse.ArgumentParser(description='Selective Encoding for Abstractive Sentence Summarization in DyNet')
 
@@ -103,8 +103,6 @@ def main():
     TRAIN_Y = os.path.join(data_dir, 'train/train.title.txt')
     VALID_X = os.path.join(data_dir, 'train/valid.article.filter.txt')
     VALID_Y = os.path.join(data_dir, 'train/valid.title.filter.txt')
-    
-    src_vocab, tgt_vocab = get_vocab(TRAIN_X, TRAIN_Y)
 
     small_vocab_file = 'sumdata/small_vocab.json'
     if os.path.exists(small_vocab_file):
@@ -112,16 +110,22 @@ def main():
     else:
         small_vocab = build_vocab([TRAIN_X, TRAIN_Y], small_vocab_file, vocab_size=80000)
 
+    emb_file = '/home/tiankeke/workspace/embeddings/giga-vec1.bin'
+    vocab, embeddings = load_word2vec_embedding(emb_file)
+
     max_src_len = 101
     max_tgt_len = 47
-    
-    train_x = BatchManager(load_data(TRAIN_X, small_vocab, max_src_len, args.n_train), args.batch_size)
-    train_y = BatchManager(load_data(TRAIN_Y, small_vocab, max_tgt_len, args.n_train), args.batch_size)
-    valid_x = BatchManager(load_data(VALID_X, small_vocab, max_src_len, args.n_valid), args.batch_size)
-    valid_y = BatchManager(load_data(VALID_Y, small_vocab, max_tgt_len, args.n_valid), args.batch_size)
 
-    model = Transformer(len(small_vocab), len(small_vocab), max_src_len, max_tgt_len, 1, 8, 512,
-                        64, 64, 2048, src_tgt_emb_share=True, tgt_prj_emb_share=True).cuda()
+    bs = args.batch_size
+
+    train_x = BatchManager(load_data(TRAIN_X, vocab, max_src_len, args.n_train), bs)
+    train_y = BatchManager(load_data(TRAIN_Y, vocab, max_tgt_len, args.n_train), bs)
+    valid_x = BatchManager(load_data(VALID_X, vocab, max_src_len, args.n_valid), bs)
+    valid_y = BatchManager(load_data(VALID_Y, vocab, max_tgt_len, args.n_valid), bs)
+
+    model = Transformer(len(vocab), len(vocab), max_src_len, max_tgt_len, 1, 8, 512,
+                        64, 64, 2048, src_tgt_emb_share=True, tgt_prj_emb_share=True,
+                        embeddings=embeddings).cuda()
 
     # print(model)
     saved_state = {'epoch': 0, 'lr': 0.001}

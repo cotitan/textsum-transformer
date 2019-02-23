@@ -115,10 +115,12 @@ def main():
     max_src_len = 101
     max_tgt_len = 47
     
-    train_x = BatchManager(load_data(TRAIN_X, small_vocab, max_src_len, args.n_train), args.batch_size)
-    train_y = BatchManager(load_data(TRAIN_Y, small_vocab, max_tgt_len, args.n_train), args.batch_size)
-    valid_x = BatchManager(load_data(VALID_X, small_vocab, max_src_len, args.n_valid), args.batch_size)
-    valid_y = BatchManager(load_data(VALID_Y, small_vocab, max_tgt_len, args.n_valid), args.batch_size)
+    bs = args.batch_size
+
+    train_x = BatchManager(load_data(TRAIN_X, small_vocab, max_src_len, args.n_train), bs)
+    train_y = BatchManager(load_data(TRAIN_Y, small_vocab, max_tgt_len, args.n_train), bs)
+    valid_x = BatchManager(load_data(VALID_X, small_vocab, max_src_len, args.n_valid), bs)
+    valid_y = BatchManager(load_data(VALID_Y, small_vocab, max_tgt_len, args.n_valid), bs)
 
     model = TransformerShareEmbedding(len(small_vocab), max_src_len, 1, 6, 300, 50, 50, 1200).cuda()
 

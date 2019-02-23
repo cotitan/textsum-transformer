@@ -2,7 +2,6 @@ import os
 import json
 import torch
 import argparse
-import numpy as np
 from utils import BatchManager, load_data, get_vocab, build_vocab
 from Transformer import Transformer, TransformerShareEmbedding
 from Beam import Beam
@@ -99,7 +98,7 @@ def main():
 
     max_src_len = 101
     max_tgt_len = 47
-    
+
     test_x = BatchManager(load_data(TEST_X, small_vocab, max_src_len, args.n_test), args.batch_size)
     
     # model = Transformer(len(src_vocab), len(tgt_vocab), max_src_len, max_tgt_len, d_word_vec=300,

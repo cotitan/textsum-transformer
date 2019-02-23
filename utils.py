@@ -5,12 +5,17 @@ from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 import torch
 import threading
+import word2vec
 import os
+import config
 
-start_tok = "<s>"
-end_tok = "</s>"
-unk_tok = "<unk>"
-pad_tok = "<pad>"
+pad_tok = config.pad_tok
+start_tok = config.start_tok
+end_tok = config.end_tok
+unk_tok = config.unk_tok
+
+pad_index = config.pad_index
+
 """ Caution:
 In training data, unk_tok='<unk>', but in test data, unk_tok='UNK'.
 This is reasonable, because if the unk_tok you predict is the same as the
@@ -19,9 +24,9 @@ but since unk_tok is unknown, it's impossible to give a correct prediction
 """
 
 
-def my_pad_sequence(batch, pad_value):
+def my_pad_sequence(batch, pad_index):
     max_len = max([len(b) for b in batch])
-    batch = [b + [pad_value] * (max_len - len(b)) for b in batch]
+    batch = [b + [pad_index] * (max_len - len(b)) for b in batch]
     return torch.tensor(batch)
 
 
@@ -46,8 +51,8 @@ class BatchManager:
             # generate next batch only when buffer is empty()
             self.s1.acquire()
             batch = list(self.data[self.bid * self.batch_size: (self.bid + 1) * self.batch_size])
-            # batch = collate_fn(batch, pad_value=3)
-            batch = my_pad_sequence(batch, 3)
+            # batch = collate_fn(batch, pad_index)
+            batch = my_pad_sequence(batch, pad_index)
             self.bid += 1
             if self.bid == self.steps:
                 self.bid = 0
@@ -55,7 +60,7 @@ class BatchManager:
 
     def next_batch(self):
         batch = list(self.data[self.bid * self.batch_size: (self.bid + 1) * self.batch_size])
-        batch = my_pad_sequence(batch, 3)
+        batch = my_pad_sequence(batch, pad_index)
         self.bid += 1
         if self.bid == self.steps:
             self.bid = 0
@@ -64,21 +69,6 @@ class BatchManager:
         # batch = self.buffer.pop()
         # self.s1.release()
         return batch
-
-
-class myCollate:
-    def __init__(self, pad_value=3):
-        self.pad_value = pad_value
-        
-    def collate_fn(self, batch_data):
-        batch_data.sort(key=lambda x: len(x), reverse=True)
-        batch_data = [torch.tensor(x) for x in batch_data]
-        padded = pad_sequence(batch_data, batch_first=True, padding_value=self.pad_value)
-        # packed = pack_padded_sequence(padded, lens, batch_first=True)
-        return padded
-    
-    def __call__(self, batch_data):
-        return self.collate_fn(batch_data)
 
 
 def build_vocab(filelist=['sumdata/train/train.article.txt', 'sumdata/train/train.title.txt'],
@@ -97,7 +87,7 @@ def build_vocab(filelist=['sumdata/train/train.article.txt', 'sumdata/train/trai
         word_freq.pop(unk_tok)
     sorted_freq = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
 
-    vocab = {start_tok: 0, end_tok: 1, unk_tok: 2, pad_tok: 3}
+    vocab = {pad_tok: 0, start_tok: 1, end_tok: 2, unk_tok: 3}
     for word, freq in sorted_freq:
         if freq > min_count:
             vocab[word] = len(vocab)
@@ -117,35 +107,33 @@ def load_embedding_vocab(embedding_path):
     return vocab
 
 
-def build_vocab_from_embeddings(embedding_path, data_file_list):
-    embedding_vocab = load_embedding_vocab(embedding_path)
-    vocab = {start_tok: 0, end_tok: 1, unk_tok: 2, pad_tok: 3}
-
-    for file in data_file_list:
-        fin = open(file)
-        for _, line in enumerate(fin):
-            for word in line.split():
-                if (word in embedding_vocab) and (word not in vocab):
-                    vocab[word] = len(vocab)
-    return vocab
+def load_word2vec_embedding(filepath):
+    w2v = word2vec.load(filepath)
+    weights = w2v.vectors
+    vocab = {}
+    if pad_tok not in w2v.vocab:
+        vocab[pad_tok] = 0
+        weights = np.concatenate([np.zeros(1, weights.shape[1]), weights], axis=0)
+    vocab = {w2v.vocab[i]: len(vocab[i]) for i in range(len(w2v.vocab))}
+    return vocab, weights
 
 
 def get_vocab(TRAIN_X, TRAIN_Y):
-	src_vocab_file = "sumdata/src_vocab.json"
-	if not os.path.exists(src_vocab_file):
-		src_vocab = build_vocab([TRAIN_X], src_vocab_file)
-	else:
-		src_vocab = json.load(open(src_vocab_file))
+    src_vocab_file = "sumdata/src_vocab.json"
+    if not os.path.exists(src_vocab_file):
+        src_vocab = build_vocab([TRAIN_X], src_vocab_file)
+    else:
+        src_vocab = json.load(open(src_vocab_file))
 
-	tgt_vocab_file = "sumdata/tgt_vocab.json"
-	if not os.path.exists(tgt_vocab_file):
-		tgt_vocab = build_vocab([TRAIN_Y], tgt_vocab_file)
-	else:
-		tgt_vocab = json.load(open(tgt_vocab_file))
-	return src_vocab, tgt_vocab
+    tgt_vocab_file = "sumdata/tgt_vocab.json"
+    if not os.path.exists(tgt_vocab_file):
+        tgt_vocab = build_vocab([TRAIN_Y], tgt_vocab_file)
+    else:
+        tgt_vocab = json.load(open(tgt_vocab_file))
+    return src_vocab, tgt_vocab
 
 
-def load_data(filename, vocab, max_len, n_data=None, target=False):
+def load_data(filename, vocab, max_len, n_data=None):
     fin = open(filename, "r", encoding="utf8")
     datas = []
     for idx, line in enumerate(fin):
@@ -170,9 +158,3 @@ class MyDatasets(Dataset):
     
     def __len__(self):
         return self._size
-
-
-def getDataLoader(filepath, vocab, n_data, batch_size, num_workers=0):
-    dataset = MyDatasets(filepath, vocab, n_data)
-    loader = DataLoader(dataset, batch_size, num_workers=num_workers, collate_fn=myCollate(vocab[pad_tok]))
-    return loader

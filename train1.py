@@ -121,11 +121,12 @@ def main():
 
     max_src_len = 101
     max_tgt_len = 47
-    
-    train_x = BatchManager(load_data(TRAIN_X, small_vocab, max_src_len, args.n_train), args.batch_size)
-    train_y = BatchManager(load_data(TRAIN_Y, small_vocab, max_tgt_len, args.n_train), args.batch_size)
-    valid_x = BatchManager(load_data(VALID_X, small_vocab, max_src_len, args.n_valid), args.batch_size)
-    valid_y = BatchManager(load_data(VALID_Y, small_vocab, max_tgt_len, args.n_valid), args.batch_size)
+    bs = args.batch_size
+
+    train_x = BatchManager(load_data(TRAIN_X, small_vocab, max_src_len, args.n_train), bs)
+    train_y = BatchManager(load_data(TRAIN_Y, small_vocab, max_tgt_len, args.n_train), bs)
+    valid_x = BatchManager(load_data(VALID_X, small_vocab, max_src_len, args.n_valid), bs)
+    valid_y = BatchManager(load_data(VALID_Y, small_vocab, max_tgt_len, args.n_valid), bs)
 
     model = Transformer(len(small_vocab), len(small_vocab), max_src_len, d_word_vec=300,
                         d_model=300, d_inner=1200, n_layers=1, n_head=6, d_k=50,
