@@ -2,9 +2,8 @@ import os
 import json
 import torch
 import argparse
-import numpy as np
 from utils import BatchManager, load_data, get_vocab, build_vocab
-from Transformer import Transformer, TransformerShareEmbedding
+from transformer.Models import Transformer
 from Beam import Beam
 import torch.nn.functional as F
 
@@ -18,7 +17,7 @@ parser.add_argument('--batch_size', type=int, default=32, help='Mini batch size 
 parser.add_argument('--emb_dim', type=int, default=300, help='Embedding size [default: 256]')
 parser.add_argument('--hid_dim', type=int, default=512, help='Hidden state size [default: 256]')
 parser.add_argument('--maxout_dim', type=int, default=2, help='Maxout size [default: 2]')
-parser.add_argument('--ckpt_file', type=str, default='./models/params_0.pkl', help='model file path')
+parser.add_argument('--ckpt_file', type=str, default='./models/params_v1_0.pkl', help='model file path')
 parser.add_argument('--search', type=str, default='greedy', help='greedy/beam')
 parser.add_argument('--beam_width', type=int, default=12, help='beam search width')
 args = parser.parse_args()
@@ -41,8 +40,12 @@ def print_summaries(summaries, vocab):
 def greedy(model, x, tgt_vocab, max_trg_len=15):
     y = torch.ones(x.shape[0], max_trg_len, dtype=torch.long).cuda() * tgt_vocab["<pad>"]
     y[:,0] = tgt_vocab["<s>"]
+
+    pos_x = torch.arange(x.shape[1]).unsqueeze(0).expand_as(x).cuda()
+    pos_y = torch.arange(y.shape[1]).unsqueeze(0).expand_as(y).cuda()
+
     for i in range(max_trg_len-1):
-        logits = model(x, y)
+        logits = model(x, pos_x, y, pos_y)
         y[:, i+1] = torch.argmax(logits[:,i,:], dim=-1)
     return y[:,1:].detach().cpu().tolist()
 
@@ -55,7 +58,11 @@ def beam_search(model, batch_x, vocab, max_trg_len=10, k=args.beam_width):
         for j in range(len(beams)):
             x = batch_x[j].unsqueeze(0).expand(k, -1)
             y = beams[j].get_sequence()
-            logit = model(x, y)
+
+            pos_x = torch.arange(x.shape[1]).unsqueeze(0).expand_as(x).cuda()
+            pos_y = torch.arange(y.shape[1]).unsqueeze(0).expand_as(y).cuda()
+
+            logit = model(x, pos_x, y, pos_y)
             # logit: [k, seqlen, V]
             log_probs = torch.log(F.softmax(logit[:, i, :], -1))
             beams[j].advance_(log_probs)
@@ -101,11 +108,11 @@ def main():
     max_tgt_len = 47
     
     test_x = BatchManager(load_data(TEST_X, small_vocab, max_src_len, args.n_test), args.batch_size)
-    
-    # model = Transformer(len(src_vocab), len(tgt_vocab), max_src_len, max_tgt_len, d_word_vec=300,
-    #                     n_layer=6, n_head=6, d_q=50, d_k=50, d_v=50, d_model=300, d_ff=1200,
-    #                     dropout=0.1, tgt_emb_prj_weight_share=True).cuda()
-    model = TransformerShareEmbedding(len(small_vocab), max_src_len, 1, 6, 300, 50, 50, 1200).cuda()
+
+    model = Transformer(len(small_vocab), len(small_vocab), max_src_len, d_word_vec=300,
+                        d_model=300, d_inner=1200, n_layers=1, n_head=6, d_k=50,
+                        d_v=50, dropout=0.1, tgt_emb_prj_weight_sharing=True,
+                        emb_src_tgt_weight_sharing=True).cuda()
     # print(model)
     model.eval()
 

@@ -18,7 +18,7 @@ parser.add_argument('--batch_size', type=int, default=32, help='Mini batch size 
 parser.add_argument('--emb_dim', type=int, default=300, help='Embedding size [default: 256]')
 parser.add_argument('--hid_dim', type=int, default=512, help='Hidden state size [default: 256]')
 parser.add_argument('--maxout_dim', type=int, default=2, help='Maxout size [default: 2]')
-parser.add_argument('--ckpt_file', type=str, default='./models/params_0.pkl', help='model file path')
+parser.add_argument('--ckpt_file', type=str, default='./models/params_v2_0.pkl', help='model file path')
 parser.add_argument('--search', type=str, default='greedy', help='greedy/beam')
 parser.add_argument('--beam_width', type=int, default=12, help='beam search width')
 args = parser.parse_args()
@@ -66,6 +66,7 @@ def beam_search(model, batch_x, vocab, max_trg_len=10, k=args.beam_width):
 
 def my_test(valid_x, model, tgt_vocab):
     summaries = []
+    model.eval()
     with torch.no_grad():
         for i in range(valid_x.steps):
             batch_x = valid_x.next_batch().cuda()
@@ -101,13 +102,9 @@ def main():
     max_tgt_len = 47
     
     test_x = BatchManager(load_data(TEST_X, small_vocab, max_src_len, args.n_test), args.batch_size)
-    
-    # model = Transformer(len(src_vocab), len(tgt_vocab), max_src_len, max_tgt_len, d_word_vec=300,
-    #                     n_layer=6, n_head=6, d_q=50, d_k=50, d_v=50, d_model=300, d_ff=1200,
-    #                     dropout=0.1, tgt_emb_prj_weight_share=True).cuda()
-    model = TransformerShareEmbedding(len(small_vocab), max_src_len, 1, 6, 300, 50, 50, 1200).cuda()
-    # print(model)
-    model.eval()
+
+    model = Transformer(len(small_vocab), len(small_vocab), max_src_len, max_tgt_len, 1, 8,
+                        512, 64, 64, 2048, src_tgt_emb_share=True, tgt_prj_emb_share=True).cuda()
 
     saved_state = torch.load(args.ckpt_file)
     model.load_state_dict(saved_state['state_dict'])
