@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 
 
-pad_index = 3
+PAD_INDEX = 3
 
 
 def get_attn_mask(seq_q, seq_k):
@@ -13,7 +13,7 @@ def get_attn_mask(seq_q, seq_k):
     :param seq_k: [batch, l_k]
     """
     l_q = seq_q.size(-1)
-    mask = seq_k.eq(pad_index).unsqueeze(1).expand(-1, l_q, -1)
+    mask = seq_k.eq(PAD_INDEX).unsqueeze(1).expand(-1, l_q, -1)
     return mask
 
 
@@ -254,6 +254,8 @@ class Transformer(nn.Module):
         else:
             self.logit_scale = 1.
 
+        self.loss_layer = nn.CrossEntropyLoss(ignore_index=PAD_INDEX)
+
     def forward(self, src_seq, tgt_seq):
         tgt_seq = tgt_seq[:, :-1]
         enc_output_list, *_ = self.encoder(src_seq)
@@ -336,7 +338,7 @@ class TransformerShareEmbedding(nn.Module):
             self.tgt_word_proj = nn.Linear(d_model, n_vocab)
             self.logit_scale = 1.
 
-        self.loss_layer = nn.CrossEntropyLoss(ignore_index=pad_index)
+        self.loss_layer = nn.CrossEntropyLoss(ignore_index=PAD_INDEX)
 
     def forward(self, src_seq, tgt_seq):
         tgt_seq = tgt_seq[:, :-1]

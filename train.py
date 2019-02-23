@@ -4,7 +4,7 @@ import json
 import utils
 import torch
 import argparse
-from dropout import Transformer, TransformerShareEmbedding
+from Transformer import Transformer, TransformerShareEmbedding
 from tensorboardX import SummaryWriter
 from utils import BatchManager, load_data, get_vocab, build_vocab
 
