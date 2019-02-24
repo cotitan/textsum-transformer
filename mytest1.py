@@ -95,8 +95,6 @@ def main():
     TRAIN_X = os.path.join(data_dir, 'train/train.article.txt')
     TRAIN_Y = os.path.join(data_dir, 'train/train.title.txt')
     TEST_X = args.input_file
-    
-    src_vocab, tgt_vocab = get_vocab(TRAIN_X, TRAIN_Y)
 
     small_vocab_file = 'sumdata/small_vocab.json'
     if os.path.exists(small_vocab_file):

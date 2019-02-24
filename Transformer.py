@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-import torch.nn.functional as F
 import numpy as np
 import config
 
@@ -242,8 +241,7 @@ class Transformer(nn.Module):
                                d_k, d_v, d_model, d_inner, dropout, embeddings)
         self.decoder = Decoder(n_tgt_vocab, max_tgt_len, n_layer, n_head,
                                d_k, d_v, d_model, d_inner, dropout, embeddings)
-    
-        self.softmax = nn.Softmax(dim=-1)
+
         self.tgt_word_proj = nn.Linear(d_model, n_tgt_vocab, bias=False)
 
         if src_tgt_emb_share:
@@ -255,6 +253,7 @@ class Transformer(nn.Module):
         if tgt_prj_emb_share:
             self.tgt_word_proj.weight = self.decoder.embedding.word_embedding.weight
             self.logit_scale = (d_model ** -0.5)
+            # self.logit_scale = 1.
         else:
             self.logit_scale = 1.
 
@@ -331,11 +330,9 @@ class TransformerShareEmbedding(nn.Module):
         
         self.encoder = EncoderShareEmbedding(n_layer, n_head, d_k, d_v, d_model, d_inner)
         self.decoder = DecoderShareEmbedding(n_layer, n_head, d_k, d_v, d_model, d_inner)
-    
-        self.softmax = nn.Softmax(dim=-1)
 
         if tgt_prj_share:
-            self.tgt_word_proj = nn.Linear(d_model, n_vocab, bias=False)
+            self.tgt_word_proj = nn.Linear(d_model, n_vocab)
             self.tgt_word_proj.weight = self.embedding.word_embedding.weight
             self.logit_scale = (d_model ** -0.5)
         else:
