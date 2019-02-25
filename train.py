@@ -1,17 +1,18 @@
 import os
+import shutil
 import logging
 import json
-import utils
 import torch
 import argparse
 from Transformer import Transformer, TransformerShareEmbedding
 from tensorboardX import SummaryWriter
 from utils import BatchManager, load_data, get_vocab, build_vocab, load_word2vec_embedding, dump_tensors
-import config
+from pyrouge import Rouge155
+from translate import greedy, print_summaries
 
 parser = argparse.ArgumentParser(description='Selective Encoding for Abstractive Sentence Summarization in DyNet')
 
-parser.add_argument('--n_epochs', type=int, default=5, help='Number of epochs [default: 3]')
+parser.add_argument('--n_epochs', type=int, default=10, help='Number of epochs [default: 3]')
 parser.add_argument('--n_train', type=int, default=3803900,
                     help='Number of training data (up to 3803957 in gigaword) [default: 3803957]')
 parser.add_argument('--n_valid', type=int, default=189651,
@@ -49,25 +50,56 @@ if not os.path.exists(model_dir):
 def run_batch(valid_x, valid_y, model):
     x = valid_x.next_batch().cuda()
     y = valid_y.next_batch().cuda()
-
     logits = model(x, y)
-
-    # loss = 0
-    # for i in range(y.shape[0]):
-    #     loss += model.loss_layer(logits[i], y[i,1:])
-    # loss /= y.shape[0]  # y.shape[1] == out_seq_len
-    loss = model.loss_layer(logits.view(-1, logits.shape[-1]), y[:, 1:].contiguous().view(-1))
+    loss = model.loss_layer(logits.view(-1, logits.shape[-1]),
+                            y[:, 1:].contiguous().view(-1))
     return loss
 
 
-def train(train_x, train_y, valid_x, valid_y, model, optimizer, scheduler, epochs=1, epoch=0):
-    logging.info("Start to train...")
-    n_batches = train_x.steps
-    writer = SummaryWriter()
+def eval_model(valid_x, valid_y, vocab, model):
+    # if we put the following part outside the code,
+    # error occurs
+    r = Rouge155()
+    r.system_dir = 'tmp/systems'
+    r.model_dir = 'tmp/models'
+    r.system_filename_pattern = "(\d+).txt"
+    r.model_filename_pattern = "[A-Z].#ID#.txt"
+
+    logging.info('Evaluating on a minibatch...')
+    model.eval()
+    x = valid_x.next_batch().cuda()
+    with torch.no_grad():
+        pred = greedy(model, x, vocab)
+    y = valid_y.next_batch()[:,1:].tolist()
+    print_summaries(pred, vocab, 'tmp/systems', '%d.txt')
+    print_summaries(y, vocab, 'tmp/models', 'A.%d.txt')
+
+    try:
+        output = r.convert_and_evaluate()
+        output_dict = r.output_to_dict(output)
+        logging.info('Rouge1-F: %f, Rouge2-F: %f, RougeL-F: %f'
+                     % (output_dict['rouge_1_f_score'],
+                        output_dict['rouge_2_f_score'],
+                        output_dict['rouge_l_f_score']))
+    except Exception as e:
+        logging.info('Failed to evaluate')
+
     model.train()
-    for epoch in range(epoch, epochs):
+
+
+def train(train_x, train_y, valid_x, valid_y, model,
+          optimizer, vocab, scheduler, n_epochs=1, epoch=0):
+    logging.info("Start to train with lr=%f..." % optimizer.param_groups[0]['lr'])
+    n_batches = train_x.steps
+    model.train()
+    for epoch in range(epoch, n_epochs):
         valid_x.bid = 0
         valid_y.bid = 0
+
+        if os.path.isdir('runs/epoch%d' % epoch):
+            shutil.rmtree('runs/epoch%d' % epoch)
+        writer = SummaryWriter('runs/epoch%d' % epoch)
+
         for idx in range(n_batches):
             optimizer.zero_grad()
 
@@ -82,22 +114,24 @@ def train(train_x, train_y, valid_x, valid_y, model, optimizer, scheduler, epoch
                 model.eval()
                 with torch.no_grad():
                     valid_loss = run_batch(valid_x, valid_y, model)
-                    logging.info('epoch %d, step %d, training loss = %f, validation loss = %f'
-                                 % (epoch, idx + 1, train_loss, valid_loss))
-                writer.add_scalar('scalar/epoch_%d/train_loss' % epoch, train_loss, (idx + 1) // 50)
-                writer.add_scalar('scalar/epoch_%d/valid_loss' % epoch, valid_loss, (idx + 1) // 50)
+                logging.info('epoch %d, step %d, training loss = %f, validation loss = %f'
+                             % (epoch, idx + 1, train_loss, valid_loss))
+                writer.add_scalar('scalar/train_loss', train_loss, (idx + 1) // 50)
+                writer.add_scalar('scalar/valid_loss', valid_loss, (idx + 1) // 50)
                 model.train()
-            del loss
+                torch.cuda.empty_cache()
+            if (idx + 1) % 2000 == 0:
+                eval_model(valid_x, valid_y, vocab, model)
             # dump_tensors()
 
-        if epoch < 5:
+        if epoch < 4:
             scheduler.step()  # make sure lr will not be too small
         save_state = {'state_dict': model.state_dict(),
                       'epoch': epoch + 1,
                       'lr': optimizer.param_groups[0]['lr']}
         torch.save(save_state, os.path.join(model_dir, 'params_v2_%d.pkl' % epoch))
         logging.info('Model saved in dir %s' % model_dir)
-    writer.close()
+        writer.close()
 
 
 def main():
@@ -149,7 +183,9 @@ def main():
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.3)
     scheduler.step()  # last_epoch=-1, which will not update lr at the first time
 
-    train(train_x, train_y, valid_x, valid_y, model, optimizer, scheduler, args.n_epochs, saved_state['epoch'])
+    eval_model(valid_x, valid_y, vocab, model)
+    train(train_x, train_y, valid_x, valid_y, model,
+          optimizer, vocab, scheduler, args.n_epochs, saved_state['epoch'])
 
 
 if __name__ == '__main__':

@@ -244,6 +244,7 @@ class Transformer(nn.Module):
 
         self.tgt_word_proj = nn.Linear(d_model, n_tgt_vocab, bias=False)
 
+        # It seems weight sharing leads to GPU out of memory
         if src_tgt_emb_share:
             assert n_src_vocab == n_tgt_vocab, \
                 "To share word embedding table, the vocabulary size of src/tgt shall be the same."
