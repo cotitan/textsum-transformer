@@ -44,7 +44,7 @@ def beam_search(model, batch_x, vocab, max_trg_len=10, k=3):
     return allHyp
 
 
-def translate(valid_x, model, tgt_vocab, search='greedy'):
+def translate(valid_x, model, tgt_vocab, search='greedy', beam_width=5):
     summaries = []
     model.eval()
     with torch.no_grad():
@@ -53,10 +53,9 @@ def translate(valid_x, model, tgt_vocab, search='greedy'):
             if search == "greedy":
                 summary = greedy(model, batch_x, tgt_vocab)
             elif search == "beam":
-                summary = beam_search(model, batch_x, tgt_vocab)
+                summary = beam_search(model, batch_x, tgt_vocab, k=beam_width)
             else:
                 raise NameError("Unknown search method")
             summaries.extend(summary)
-    print_summaries(summaries, tgt_vocab)
-    print("Done!")
+    return summaries
 
