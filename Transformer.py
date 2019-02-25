@@ -324,10 +324,11 @@ class DecoderShareEmbedding(nn.Module):
 
 class TransformerShareEmbedding(nn.Module):
     def __init__(self, n_vocab, max_seq_len, n_layer, n_head,
-                 d_model, d_k, d_v, d_inner, tgt_prj_share=False):
+                 d_model, d_k, d_v, d_inner, tgt_prj_share=False,
+                 embeddings=None):
         super(TransformerShareEmbedding, self).__init__()
 
-        self.embedding = Embedding(n_vocab, d_model, max_seq_len)
+        self.embedding = Embedding(n_vocab, d_model, max_seq_len, embeddings=embeddings)
         
         self.encoder = EncoderShareEmbedding(n_layer, n_head, d_k, d_v, d_model, d_inner)
         self.decoder = DecoderShareEmbedding(n_layer, n_head, d_k, d_v, d_model, d_inner)
