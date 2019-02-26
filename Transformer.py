@@ -2,6 +2,7 @@ import torch
 from torch import nn
 import numpy as np
 import config
+from allennlp.modules.elmo import Elmo, batch_to_ids
 
 pad_index = config.pad_index
 
@@ -200,12 +201,12 @@ class DecoderLayer(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, n_vocab, max_seq_len, n_layers, n_head,
+    def __init__(self, n_vocab, max_seq_len, n_layer, n_head,
                  d_k, d_v, d_model, d_inner, dropout=0.1, embeddings=None):
         super(Decoder, self).__init__()
         self.embedding = Embedding(n_vocab, d_model, max_seq_len, embeddings)
         self.layers = nn.ModuleList(
-            [DecoderLayer(n_head, d_k, d_v, d_model, d_inner, dropout) for _ in range(n_layers)]
+            [DecoderLayer(n_head, d_k, d_v, d_model, d_inner, dropout) for _ in range(n_layer)]
         )
 
     def forward(self, enc_outputs_list, src_seq, tgt_seq):
@@ -291,10 +292,10 @@ class EncoderShareEmbedding(nn.Module):
 
 
 class DecoderShareEmbedding(nn.Module):
-    def __init__(self, n_layers, n_head, d_k, d_v, d_model, d_inner, dropout=0.1):
+    def __init__(self, n_layer, n_head, d_k, d_v, d_model, d_inner, dropout=0.1):
         super(DecoderShareEmbedding, self).__init__()
         self.layers = nn.ModuleList(
-            [DecoderLayer(n_head, d_k, d_v, d_model, d_inner, dropout) for _ in range(n_layers)]
+            [DecoderLayer(n_head, d_k, d_v, d_model, d_inner, dropout) for _ in range(n_layer)]
         )
 
     def forward(self, enc_outputs_list, dec_inputs, src_seq, tgt_seq):
@@ -352,4 +353,117 @@ class TransformerShareEmbedding(nn.Module):
         dec_outputs, *_ = self.decoder(enc_output_list, tgt_embeds, src_seq, tgt_seq)
 
         logits = self.tgt_word_proj(dec_outputs) * self.logit_scale
+        return logits
+
+
+class ElmoEmbedder(nn.Module):
+    def __init__(self, requires_grad=False):
+        super(ElmoEmbedder, self).__init__()
+        # TODO,
+        # set num_output_representations=3 may result to better performance
+        self.elmo = Elmo(config.options_file,
+                         config.weight_file,
+                         num_output_representations=1,
+                         requires_grad=requires_grad,
+                         dropout=0.1)
+
+    def forward(self, batch_stnc, idx=None):
+        """
+        produce elmo embedding of a batch of variable length text
+        :param batch_stnc:
+        :param idx: the idx-th layer representation
+        :return embeddings: list of tensor in shape [batch, max_len, d_model]
+        :return mask: 0-1 tensor in shape [batch, max_len], 0 for padding
+        """
+        elmo_output = self.elmo(batch_to_ids(batch_stnc).cuda())
+        embeddings = elmo_output['elmo_representations']
+        mask = elmo_output['mask']
+        if idx is not None:
+            return embeddings[idx], mask
+        else:
+            return embeddings, mask
+
+
+class ElmoTransformer(nn.Module):
+    def __init__(self, max_len, n_vocab, n_layer, n_head, d_k, d_v,
+                 d_model, d_inner, dropout=0.1):
+        super(ElmoTransformer, self).__init__()
+
+        self.n_vocab = n_vocab
+
+        self.d_model = 256  # 256 is the size of small elmo
+        self.elmo_embedder = ElmoEmbedder(requires_grad=False)  # False means freeze
+
+        self.position_embedder = nn.Embedding.from_pretrained(
+            get_sinusoid_encoding_table(max_len, self.d_model),
+            freeze=True
+        )
+
+        self.encoder = EncoderShareEmbedding(n_layer, n_head, d_k, d_v,
+                                             self.d_model, d_inner, dropout)
+        self.decoder = DecoderShareEmbedding(n_layer, n_head, d_k, d_v,
+                                             self.d_model, d_inner, dropout)
+
+        self.tgt_word_prj = nn.Linear(self.d_model, n_vocab)
+
+        self.loss_layer = nn.CrossEntropyLoss(ignore_index=config.pad_index)
+
+    def get_tgt_embeddings(self, tgt_stncs, idx=0):
+        max_len = max(len(stnc) for stnc in tgt_stncs)
+        embeddings, _= self.elmo_embedder([stnc[:1] for stnc in tgt_stncs], idx)
+        for i in range(2, max_len):
+            cur_emb, mask = self.elmo_embedder([stnc[:i] for stnc in tgt_stncs], idx)
+            embeddings = torch.cat([embeddings, cur_emb[:,-1,:].unsqueeze(1)], dim=1)
+        return embeddings, mask
+
+    def get_position_ids(self, stncs, tgt=False):
+        max_len = max(len(s) for s in stncs)
+        if tgt:
+            max_len -= 1 # exclude </s> token
+        pos_ids = torch.arange(max_len, dtype=torch.long)
+        pos_ids = pos_ids.unsqueeze(0).expand(len(stncs), -1)
+        return pos_ids.cuda()
+
+    def forward(self, src_stncs, tgt_stncs):
+        idx = 0  # choose the n-th layer output
+        src_embeds, src_mask = self.elmo_embedder(src_stncs, idx=0)
+        src_embeds += self.position_embedder(self.get_position_ids(src_stncs))
+
+        tgt_embeds, tgt_mask = self.get_tgt_embeddings(tgt_stncs)
+        tgt_embeds += self.position_embedder(
+            self.get_position_ids(tgt_stncs, tgt=True))
+
+        enc_output_list, *_ = self.encoder(src_embeds, src_mask)
+        dec_output, *_ = self.decoder(enc_output_list, tgt_embeds, src_mask, tgt_mask)
+        logits = self.tgt_word_prj(dec_output)
+        return logits
+
+
+class ElmoTransformer1(nn.Module):
+    def __init__(self, max_len, n_vocab, n_layer, n_head, d_k, d_v, d_model, d_inner,
+                 dropout=0.1, emb_prj_weight_share=True):
+        super(ElmoTransformer1, self).__init__()
+
+        self.d_model = 256  # 256 for small elmo
+        self.elmo = ElmoEmbedder(requires_grad=False)
+
+        self.encoder = EncoderShareEmbedding(n_layer, n_head, d_k, d_v, d_model, d_inner, dropout)
+        self.decoder = Decoder(n_vocab, max_len, n_layer, n_head, d_k, d_v, d_model, d_inner, dropout)
+
+        self.tgt_word_prj = nn.Linear(d_model, n_vocab)
+        if emb_prj_weight_share:
+            self.tgt_word_prj.weight = self.decoder.embedding.word_embedding.weight
+            self.logit_scale = d_model ** -0.5
+        else:
+            self.logit_scale = 1.
+
+        self.loss_layer = nn.CrossEntropyLoss(ignore_index=config.pad_index)
+
+    def forward(self, src_stncs, tgt_ids):
+        src_embeds, src_mask = self.elmo(src_stncs, idx=0)
+        tgt_ids = tgt_ids[:,:-1]
+        enc_output_list, *_ = self.encoder(src_embeds, src_mask)
+        dec_output, *_ = self.decoder(enc_output_list, src_mask, tgt_ids)
+
+        logits = self.tgt_word_prj(dec_output) * self.logit_scale
         return logits

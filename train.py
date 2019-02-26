@@ -159,10 +159,10 @@ def main():
 
     vocab = small_vocab
 
-    train_x = BatchManager(load_data(TRAIN_X, vocab, max_src_len, args.n_train), bs)
-    train_y = BatchManager(load_data(TRAIN_Y, vocab, max_tgt_len, args.n_train), bs)
-    valid_x = BatchManager(load_data(VALID_X, vocab, max_src_len, args.n_valid), bs)
-    valid_y = BatchManager(load_data(VALID_Y, vocab, max_tgt_len, args.n_valid), bs)
+    train_x = BatchManager(load_data(TRAIN_X, max_src_len, args.n_train, vocab), bs)
+    train_y = BatchManager(load_data(TRAIN_Y, max_tgt_len, args.n_train, vocab), bs)
+    valid_x = BatchManager(load_data(VALID_X, max_src_len, args.n_valid, vocab), bs)
+    valid_y = BatchManager(load_data(VALID_Y, max_tgt_len, args.n_valid, vocab), bs)
 
     # model = Transformer(len(vocab), len(vocab), max_src_len, max_tgt_len, 1, 4, 256,
     #                     64, 64, 1024, src_tgt_emb_share=True, tgt_prj_emb_share=True).cuda()

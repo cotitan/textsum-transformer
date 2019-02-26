@@ -3,7 +3,7 @@ import json
 import torch
 import argparse
 from utils import BatchManager, load_data, get_vocab, build_vocab
-from transformer.Models import Transformer
+from Transformer import ElmoTransformer
 from Beam import Beam
 import torch.nn.functional as F
 
@@ -13,56 +13,44 @@ parser.add_argument('--n_test', type=int, default=1951,
                     help='Number of validation data (up to 189651 in gigaword) [default: 189651])')
 parser.add_argument('--input_file', type=str, default="sumdata/Giga/input.txt", help='input file')
 parser.add_argument('--output_dir', type=str, default="sumdata/Giga/systems/", help='')
-parser.add_argument('--batch_size', type=int, default=32, help='Mini batch size [default: 32]')
-parser.add_argument('--emb_dim', type=int, default=300, help='Embedding size [default: 256]')
-parser.add_argument('--hid_dim', type=int, default=512, help='Hidden state size [default: 256]')
-parser.add_argument('--maxout_dim', type=int, default=2, help='Maxout size [default: 2]')
-parser.add_argument('--ckpt_file', type=str, default='./models/params_v1_0.pkl', help='model file path')
+parser.add_argument('--batch_size', type=int, default=64, help='Mini batch size [default: 32]')
+parser.add_argument('--ckpt_file', type=str, default='./models/params_elmo_0.pkl', help='model file path')
 parser.add_argument('--search', type=str, default='greedy', help='greedy/beam')
 parser.add_argument('--beam_width', type=int, default=12, help='beam search width')
 args = parser.parse_args()
 print(args)
 
 
-def print_summaries(summaries, vocab):
+def print_summaries(summaries, vocab, output_dir, pattern='%d.txt'):
     """
     param summaries: in shape (seq_len, batch)
     """
-    i2w = {key: value for value, key in vocab.items()}
-
     for idx in range(len(summaries)):
-        fout = open(os.path.join(args.output_dir, "%d.txt" % idx), "w")
-        line = [i2w[tok] for tok in summaries[idx] if tok != vocab["</s>"]]
+        fout = open(os.path.join(output_dir, pattern % idx), "w")
+        line = [tok for tok in summaries[idx] if tok not in ['<s>', '</s>', '<pad>']]
         fout.write(" ".join(line) + "\n")
         fout.close()
 
 
 def greedy(model, x, tgt_vocab, max_trg_len=15):
-    y = torch.ones(x.shape[0], max_trg_len, dtype=torch.long).cuda() * tgt_vocab["<pad>"]
-    y[:,0] = tgt_vocab["<s>"]
-
-    pos_x = torch.arange(x.shape[1]).unsqueeze(0).expand_as(x).cuda()
-    pos_y = torch.arange(y.shape[1]).unsqueeze(0).expand_as(y).cuda()
-
-    for i in range(max_trg_len-1):
-        logits = model(x, pos_x, y, pos_y)
-        y[:, i+1] = torch.argmax(logits[:,i,:], dim=-1)
-    return y[:,1:].detach().cpu().tolist()
+    y = [['<s>'] * max_trg_len] * len(x)
+    id2w = {v: k for k,v in tgt_vocab.items()}
+    for i in range(max_trg_len - 1):
+        logits = model(x, y)
+        argmax = torch.argmax(logits[:, i, :], dim=-1).detach().cpu().tolist()
+        for j in range(len(y)):
+            y[j][i+1] = id2w[argmax[j]]
+    return y
 
 
-def beam_search(model, batch_x, vocab, max_trg_len=10, k=args.beam_width):
-
+def beam_search(model, batch_x, vocab, max_trg_len=10, k=3):
     beams = [Beam(k, vocab, max_trg_len) for _ in range(batch_x.shape[0])]
-    
+
     for i in range(max_trg_len):
         for j in range(len(beams)):
             x = batch_x[j].unsqueeze(0).expand(k, -1)
             y = beams[j].get_sequence()
-
-            pos_x = torch.arange(x.shape[1]).unsqueeze(0).expand_as(x).cuda()
-            pos_y = torch.arange(y.shape[1]).unsqueeze(0).expand_as(y).cuda()
-
-            logit = model(x, pos_x, y, pos_y)
+            logit = model(x, y)
             # logit: [k, seqlen, V]
             log_probs = torch.log(F.softmax(logit[:, i, :], -1))
             beams[j].advance_(log_probs)
@@ -71,19 +59,26 @@ def beam_search(model, batch_x, vocab, max_trg_len=10, k=args.beam_width):
     return allHyp
 
 
-def my_test(valid_x, model, tgt_vocab):
+def translate(valid_x, model, tgt_vocab, search='greedy', beam_width=5):
     summaries = []
+    model.eval()
     with torch.no_grad():
         for i in range(valid_x.steps):
-            batch_x = valid_x.next_batch().cuda()
-            if args.search == "greedy":
+            print(i, flush=True)
+            batch_x = valid_x.next_batch()
+            if search == "greedy":
                 summary = greedy(model, batch_x, tgt_vocab)
-            elif args.search == "beam":
-                summary = beam_search(model, batch_x, tgt_vocab)
+            elif search == "beam":
+                summary = beam_search(model, batch_x, tgt_vocab, k=beam_width)
             else:
                 raise NameError("Unknown search method")
             summaries.extend(summary)
-    print_summaries(summaries, tgt_vocab)
+    return summaries
+
+
+def my_test(valid_x, model, tgt_vocab):
+    summaries = translate(valid_x, model, tgt_vocab, search='greedy')
+    print_summaries(summaries, tgt_vocab, args.output_dir)
     print("Done!")
 
 
@@ -105,14 +100,10 @@ def main():
     max_src_len = 101
     max_tgt_len = 47
 
-    test_x = BatchManager(load_data(TEST_X, max_src_len, args.n_test, small_vocab), args.batch_size)
+    vocab = small_vocab
+    test_x = BatchManager(load_data(TEST_X, max_src_len, args.n_test), args.batch_size, pad=False)
 
-    model = Transformer(len(small_vocab), len(small_vocab), max_src_len, d_word_vec=300,
-                        d_model=300, d_inner=1200, n_layers=1, n_head=6, d_k=50,
-                        d_v=50, dropout=0.1, tgt_emb_prj_weight_sharing=True,
-                        emb_src_tgt_weight_sharing=True).cuda()
-    # print(model)
-    model.eval()
+    model = ElmoTransformer(max_src_len, len(vocab), 1, 4, 64, 64, 256, 1024).cuda()
 
     saved_state = torch.load(args.ckpt_file)
     model.load_state_dict(saved_state['state_dict'])

@@ -122,13 +122,14 @@ def main():
     max_src_len = 101
     max_tgt_len = 47
     bs = args.batch_size
+    vocab = small_vocab
 
-    train_x = BatchManager(load_data(TRAIN_X, small_vocab, max_src_len, args.n_train), bs)
-    train_y = BatchManager(load_data(TRAIN_Y, small_vocab, max_tgt_len, args.n_train), bs)
-    valid_x = BatchManager(load_data(VALID_X, small_vocab, max_src_len, args.n_valid), bs)
-    valid_y = BatchManager(load_data(VALID_Y, small_vocab, max_tgt_len, args.n_valid), bs)
+    train_x = BatchManager(load_data(TRAIN_X, max_src_len, args.n_train, vocab), bs)
+    train_y = BatchManager(load_data(TRAIN_Y, max_tgt_len, args.n_train, vocab), bs)
+    valid_x = BatchManager(load_data(VALID_X, max_src_len, args.n_valid, vocab), bs)
+    valid_y = BatchManager(load_data(VALID_Y, max_tgt_len, args.n_valid, vocab), bs)
 
-    model = Transformer(len(small_vocab), len(small_vocab), max_src_len, d_word_vec=300,
+    model = Transformer(len(vocab), len(vocab), max_src_len, d_word_vec=300,
                         d_model=300, d_inner=1200, n_layers=1, n_head=6, d_k=50,
                         d_v=50, dropout=0.1, tgt_emb_prj_weight_sharing=True,
                         emb_src_tgt_weight_sharing=True).cuda()

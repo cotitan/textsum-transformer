@@ -31,11 +31,12 @@ def my_pad_sequence(batch, pad_index):
 
 
 class BatchManager:
-    def __init__(self, data, batch_size):
+    def __init__(self, data, batch_size, pad=True):
         self.steps = int(len(data) / batch_size)
         # comment following two lines to neglect the last batch
         if self.steps * batch_size < len(data):
             self.steps += 1
+        self.pad = pad
         self.data = data
         self.batch_size = batch_size
         self.bid = 0
@@ -60,7 +61,8 @@ class BatchManager:
 
     def next_batch(self):
         batch = list(self.data[self.bid * self.batch_size: (self.bid + 1) * self.batch_size])
-        batch = my_pad_sequence(batch, pad_index)
+        if self.pad:
+            batch = my_pad_sequence(batch, pad_index)
         self.bid += 1
         if self.bid == self.steps:
             self.bid = 0
@@ -134,7 +136,14 @@ def get_vocab(TRAIN_X, TRAIN_Y):
     return src_vocab, tgt_vocab
 
 
-def load_data(filename, vocab, max_len, n_data=None):
+def load_data(filename, max_len, n_data=None, vocab=None):
+    """
+    :param filename: the file to read
+    :param max_len: maximum length of a line
+    :param vocab: dict {word: id}, if no vocab provided, return raw text
+    :param n_data: number of lines to read
+    :return: datas
+    """
     fin = open(filename, "r", encoding="utf8")
     datas = []
     for idx, line in enumerate(fin):
@@ -144,8 +153,9 @@ def load_data(filename, vocab, max_len, n_data=None):
         if len(words) > max_len - 2:
             words = words[:max_len-2]
         words = ['<s>'] + words + ['</s>']
-        sample = [vocab.get(w, vocab[unk_tok]) for w in words]
-        datas.append(sample)
+        if vocab is not None:
+            words = [vocab.get(w, vocab[unk_tok]) for w in words]
+        datas.append(words)
     return datas
 
 
