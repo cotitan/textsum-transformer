@@ -6,6 +6,7 @@ from utils import BatchManager, load_data, get_vocab, build_vocab
 from Transformer import ElmoTransformer
 from Beam import Beam
 import torch.nn.functional as F
+import copy
 
 parser = argparse.ArgumentParser(description='Selective Encoding for Abstractive Sentence Summarization in pytorch')
 
@@ -33,7 +34,7 @@ def print_summaries(summaries, vocab, output_dir, pattern='%d.txt'):
 
 
 def greedy(model, x, tgt_vocab, max_trg_len=15):
-    y = [['<s>'] * max_trg_len] * len(x)
+    y = [['<s>'] * max_trg_len for _ in range(len(x))]
     id2w = {v: k for k,v in tgt_vocab.items()}
     for i in range(max_trg_len - 1):
         logits = model(x, y)

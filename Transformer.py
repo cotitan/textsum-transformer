@@ -363,7 +363,7 @@ class ElmoEmbedder(nn.Module):
         # set num_output_representations=3 may result to better performance
         self.elmo = Elmo(config.options_file,
                          config.weight_file,
-                         num_output_representations=1,
+                         num_output_representations=3,
                          requires_grad=requires_grad,
                          dropout=0.1)
 
@@ -386,13 +386,13 @@ class ElmoEmbedder(nn.Module):
 
 class ElmoTransformer(nn.Module):
     def __init__(self, max_len, n_vocab, n_layer, n_head, d_k, d_v,
-                 d_model, d_inner, dropout=0.1):
+                 d_model, d_inner, dropout=0.1, elmo_requires_grad=False):
         super(ElmoTransformer, self).__init__()
 
         self.n_vocab = n_vocab
 
         self.d_model = 256  # 256 is the size of small elmo
-        self.elmo_embedder = ElmoEmbedder(requires_grad=False)  # False means freeze
+        self.elmo_embedder = ElmoEmbedder(requires_grad=elmo_requires_grad)  # False means freeze
 
         self.position_embedder = nn.Embedding.from_pretrained(
             get_sinusoid_encoding_table(max_len, self.d_model),
@@ -410,7 +410,7 @@ class ElmoTransformer(nn.Module):
 
     def get_tgt_embeddings(self, tgt_stncs, idx=0):
         max_len = max(len(stnc) for stnc in tgt_stncs)
-        embeddings, _= self.elmo_embedder([stnc[:1] for stnc in tgt_stncs], idx)
+        embeddings, mask = self.elmo_embedder([stnc[:1] for stnc in tgt_stncs], idx)
         for i in range(2, max_len):
             cur_emb, mask = self.elmo_embedder([stnc[:i] for stnc in tgt_stncs], idx)
             embeddings = torch.cat([embeddings, cur_emb[:,-1,:].unsqueeze(1)], dim=1)
@@ -426,10 +426,10 @@ class ElmoTransformer(nn.Module):
 
     def forward(self, src_stncs, tgt_stncs):
         idx = 0  # choose the n-th layer output
-        src_embeds, src_mask = self.elmo_embedder(src_stncs, idx=0)
+        src_embeds, src_mask = self.elmo_embedder(src_stncs, idx=-1)
         src_embeds += self.position_embedder(self.get_position_ids(src_stncs))
 
-        tgt_embeds, tgt_mask = self.get_tgt_embeddings(tgt_stncs)
+        tgt_embeds, tgt_mask = self.get_tgt_embeddings(tgt_stncs, idx=-1)
         tgt_embeds += self.position_embedder(
             self.get_position_ids(tgt_stncs, tgt=True))
 

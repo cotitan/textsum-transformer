@@ -18,13 +18,15 @@ parser.add_argument('--n_train', type=int, default=3803900,
 parser.add_argument('--n_valid', type=int, default=189651,
                     help='Number of validation data (up to 189651 in gigaword) [default: 189651])')
 parser.add_argument('--batch_size', type=int, default=32, help='Mini batch size [default: 32]')
-parser.add_argument('--ckpt_file', type=str, default='./models/params_elmo_0.pkl')
+parser.add_argument('--ckpt_file', type=str, default='models/elmo_layers3_translayer2_epoch0.pkl')
 args = parser.parse_args()
+
+save_name = "elmo_layer3_translayer2"
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    filename='log/train_elmo.log',
+    filename='log/train_%s.log' % save_name,
     filemode='w'
 )
 
@@ -100,7 +102,7 @@ def train(train_x, train_y, y_ids, valid_x, valid_y, valid_y_ids, model,
         valid_y.bid = 0
         valid_y_ids.bid = 0
 
-        writer_dir = 'runs/epoch%d' % epoch
+        writer_dir = 'runs/%s_epoch%d' % (save_name, epoch)
         if os.path.isdir(writer_dir):
             shutil.rmtree(writer_dir)
         writer = SummaryWriter(writer_dir)
@@ -134,8 +136,9 @@ def train(train_x, train_y, y_ids, valid_x, valid_y, valid_y_ids, model,
         save_state = {'state_dict': model.state_dict(),
                       'epoch': epoch + 1,
                       'lr': optimizer.param_groups[0]['lr']}
-        torch.save(save_state, os.path.join(model_dir, 'params_elmo_%d.pkl' % epoch))
-        logging.info('Model saved in dir %s' % model_dir)
+        save_path = os.path.join(model_dir, '%s_epoch%d.pkl' % (save_name, epoch))
+        torch.save(save_state, save_path)
+        logging.info('Model saved in file %s' % save_path)
         writer.close()
 
 
@@ -175,7 +178,9 @@ def main():
     #                     64, 64, 1024, src_tgt_emb_share=True, tgt_prj_emb_share=True).cuda()
     # model = Transformer(len(vocab), len(vocab), max_src_len, max_tgt_len, 1, 6, 300,
     #                     50, 50, 1200, src_tgt_emb_share=True, tgt_prj_emb_share=True).cuda()
-    model = ElmoTransformer(max_src_len, len(vocab), 1, 4, 64, 64, 256, 1024).cuda()
+    # elmo_requries_grad=True after epoch 3
+    model = ElmoTransformer(max_src_len, len(vocab), 2, 4, 64, 64, 256, 1024,
+                            dropout=0.1, elmo_requires_grad=False).cuda()
 
     # print(model)
     saved_state = {'epoch': 0, 'lr': 0.001}
