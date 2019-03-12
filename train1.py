@@ -1,12 +1,13 @@
+""" use another implementation from ./transformer """
 import os
 import logging
 import torch
 import json
 import argparse
-# from Transformer import Transformer
 from transformer.Models import Transformer
 from utils import BatchManager, load_data, get_vocab, build_vocab
 from tensorboardX import SummaryWriter
+import config
 
 parser = argparse.ArgumentParser(description='Selective Encoding for Abstractive Sentence Summarization in DyNet')
 
@@ -46,13 +47,12 @@ model_dir = './models'
 if not os.path.exists(model_dir):
     os.mkdir(model_dir)
 
-PAD_VALUE = 3
-loss_layer = torch.nn.CrossEntropyLoss(ignore_index=PAD_VALUE)
+loss_layer = torch.nn.CrossEntropyLoss(ignore_index=config.pad_index)
 
 
 def run_batch(valid_x, valid_y, model):
-    x = valid_x.next_batch().cuda()
-    y = valid_y.next_batch().cuda()
+    _, x = valid_x.next_batch()
+    _, y = valid_y.next_batch()
 
     pos_x = torch.arange(x.shape[1]).unsqueeze(0).expand_as(x).cuda()
     pos_y = torch.arange(y.shape[1]).unsqueeze(0).expand_as(y).cuda()
@@ -122,12 +122,15 @@ def main():
     max_src_len = 101
     max_tgt_len = 47
     bs = args.batch_size
+    n_train = args.n_train
+    n_valid = args.n_valid
+
     vocab = small_vocab
 
-    train_x = BatchManager(load_data(TRAIN_X, max_src_len, args.n_train, vocab), bs)
-    train_y = BatchManager(load_data(TRAIN_Y, max_tgt_len, args.n_train, vocab), bs)
-    valid_x = BatchManager(load_data(VALID_X, max_src_len, args.n_valid, vocab), bs)
-    valid_y = BatchManager(load_data(VALID_Y, max_tgt_len, args.n_valid, vocab), bs)
+    train_x = BatchManager(load_data(TRAIN_X, max_src_len, n_train), bs, vocab)
+    train_y = BatchManager(load_data(TRAIN_Y, max_tgt_len, n_train), bs, vocab)
+    valid_x = BatchManager(load_data(VALID_X, max_src_len, n_valid), bs, vocab)
+    valid_y = BatchManager(load_data(VALID_Y, max_tgt_len, n_valid), bs, vocab)
 
     model = Transformer(len(vocab), len(vocab), max_src_len, d_word_vec=300,
                         d_model=300, d_inner=1200, n_layers=1, n_head=6, d_k=50,

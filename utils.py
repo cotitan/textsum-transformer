@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 import torch
 import threading
-import word2vec
+import word2vec  # used for load word2vec embeddings, comment this line if you don't need this
 import os
 import config
 
@@ -24,53 +24,33 @@ but since unk_tok is unknown, it's impossible to give a correct prediction
 """
 
 
-def my_pad_sequence(batch, pad_index):
+def my_pad_sequence(batch, pad_tok):
     max_len = max([len(b) for b in batch])
-    batch = [b + [pad_index] * (max_len - len(b)) for b in batch]
-    return torch.tensor(batch)
+    batch = [b + [pad_tok] * (max_len - len(b)) for b in batch]
+    return batch
 
 
 class BatchManager:
-    def __init__(self, data, batch_size, pad=True):
+    def __init__(self, data, batch_size, vocab):
         self.steps = int(len(data) / batch_size)
         # comment following two lines to neglect the last batch
         if self.steps * batch_size < len(data):
             self.steps += 1
-        self.pad = pad
+        self.vocab = vocab
         self.data = data
         self.batch_size = batch_size
         self.bid = 0
 
-        """ for multi-thread reading """
-        # self.buffer = []
-        # self.s1 = threading.Semaphore(1)
-        # self.t1 = threading.Thread(target=self.loader, args=())
-        # self.t1.start()
-
-    def loader(self):
-        while True:
-            # generate next batch only when buffer is empty()
-            self.s1.acquire()
-            batch = list(self.data[self.bid * self.batch_size: (self.bid + 1) * self.batch_size])
-            # batch = collate_fn(batch, pad_index)
-            batch = my_pad_sequence(batch, pad_index)
-            self.bid += 1
-            if self.bid == self.steps:
-                self.bid = 0
-            self.buffer.append(batch)
-
-    def next_batch(self):
-        batch = list(self.data[self.bid * self.batch_size: (self.bid + 1) * self.batch_size])
-        if self.pad:
-            batch = my_pad_sequence(batch, pad_index)
+    def next_batch(self, pad_flag=True, cuda=True):
+        stncs = list(self.data[self.bid * self.batch_size: (self.bid + 1) * self.batch_size])
+        if pad_flag:
+            stncs = my_pad_sequence(stncs, pad_tok)
+            ids = [[self.vocab.get(tok, self.vocab[unk_tok]) for tok in stnc] for stnc in stncs]
+            ids = torch.tensor(ids)
         self.bid += 1
         if self.bid == self.steps:
             self.bid = 0
-
-        """ for multi-thread reading """
-        # batch = self.buffer.pop()
-        # self.s1.release()
-        return batch
+        return stncs, ids.cuda() if cuda else ids
 
 
 def build_vocab(filelist=['sumdata/train/train.article.txt', 'sumdata/train/train.title.txt'],
@@ -136,7 +116,7 @@ def get_vocab(TRAIN_X, TRAIN_Y):
     return src_vocab, tgt_vocab
 
 
-def load_data(filename, max_len, n_data=None, vocab=None):
+def load_data(filename, max_len, n_data=None):
     """
     :param filename: the file to read
     :param max_len: maximum length of a line
@@ -153,8 +133,6 @@ def load_data(filename, max_len, n_data=None, vocab=None):
         if len(words) > max_len - 2:
             words = words[:max_len-2]
         words = ['<s>'] + words + ['</s>']
-        if vocab is not None:
-            words = [vocab.get(w, vocab[unk_tok]) for w in words]
         datas.append(words)
     return datas
 

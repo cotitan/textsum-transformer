@@ -53,7 +53,7 @@ def greedy(model, x, tgt_vocab, max_trg_len=15):
 def beam_search(model, batch_x, vocab, max_trg_len=10, k=args.beam_width):
 
     beams = [Beam(k, vocab, max_trg_len) for _ in range(batch_x.shape[0])]
-    
+
     for i in range(max_trg_len):
         for j in range(len(beams)):
             x = batch_x[j].unsqueeze(0).expand(k, -1)
@@ -75,11 +75,11 @@ def my_test(valid_x, model, tgt_vocab):
     summaries = []
     with torch.no_grad():
         for i in range(valid_x.steps):
-            batch_x = valid_x.next_batch().cuda()
+            _, x = valid_x.next_batch()
             if args.search == "greedy":
-                summary = greedy(model, batch_x, tgt_vocab)
+                summary = greedy(model, x, tgt_vocab)
             elif args.search == "beam":
-                summary = beam_search(model, batch_x, tgt_vocab)
+                summary = beam_search(model, x, tgt_vocab)
             else:
                 raise NameError("Unknown search method")
             summaries.extend(summary)
@@ -105,7 +105,7 @@ def main():
     max_src_len = 101
     max_tgt_len = 47
 
-    test_x = BatchManager(load_data(TEST_X, max_src_len, args.n_test, small_vocab), args.batch_size)
+    test_x = BatchManager(load_data(TEST_X, max_src_len, args.n_test), args.batch_size, small_vocab)
 
     model = Transformer(len(small_vocab), len(small_vocab), max_src_len, d_word_vec=300,
                         d_model=300, d_inner=1200, n_layers=1, n_head=6, d_k=50,

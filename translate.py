@@ -49,7 +49,7 @@ def translate(valid_x, model, tgt_vocab, search='greedy', beam_width=5):
     model.eval()
     with torch.no_grad():
         for i in range(valid_x.steps):
-            batch_x = valid_x.next_batch().cuda()
+            _, batch_x = valid_x.next_batch()
             if search == "greedy":
                 summary = greedy(model, batch_x, tgt_vocab)
             elif search == "beam":

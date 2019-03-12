@@ -2,6 +2,7 @@ import torch
 from torch import nn
 import numpy as np
 import config
+# use elmo embeddings, comment the following line if you don't need it
 from allennlp.modules.elmo import Elmo, batch_to_ids
 
 pad_index = config.pad_index
@@ -113,6 +114,8 @@ class MultiheadAttention(nn.Module):
 
         context = torch.cat(context, dim=-1)
         output = self.W_O(context)
+        # TODO try output = self.layer_norm(self.dropout(output+residual))
+        # instead of self.layer_norm(self.dropout(output) + residual)
         output = self.dropout(output)
         output = self.layer_norm(output + residual)
         return output, attn_weight
@@ -357,113 +360,108 @@ class TransformerShareEmbedding(nn.Module):
 
 
 class ElmoEmbedder(nn.Module):
-    def __init__(self, requires_grad=False):
+    def __init__(self, requires_grad=False, dropout=0.5):
         super(ElmoEmbedder, self).__init__()
         # TODO,
         # set num_output_representations=3 may result to better performance
         self.elmo = Elmo(config.options_file,
                          config.weight_file,
-                         num_output_representations=3,
+                         num_output_representations=2,
                          requires_grad=requires_grad,
-                         dropout=0.1)
+                         dropout=dropout)
 
-    def forward(self, batch_stnc, idx=None):
+    @ staticmethod
+    def batch_to_ids(stncs, tgt_flag=False):
+        """
+        convert list of text into ids that elmo accepts
+        :param stncs: [['I', 'Like', 'you'],['Yes'] ]
+        :param tgt_flag: indicates if the inputs is a target sentences, if it is,
+                        use only the previous words as context, and neglect last word
+        :return ids: indices to feed into elmo
+        """
+        ids = batch_to_ids(stncs)  # (batch, seqlen, 50)
+        if tgt_flag:
+            ids = ids[:,:-1,:]  # neglect the last word
+            b_size, _len, dim = ids.shape
+            expand_ids = torch.zeros(b_size * _len, _len, dim, dtype=torch.long)
+            for i in range(1, _len + 1):
+                expand_ids[b_size*(i-1):b_size*i, :i, :] = ids[:, :i, :]
+            return expand_ids
+        return ids
+
+    def forward(self, stncs, tgt_flag=False, idx=-1):
         """
         produce elmo embedding of a batch of variable length text
-        :param batch_stnc:
+        :param stnc: list of sentences, a sentence is a list of words
+        :param tgt_flag: indicates if the inputs is a target sentences, if it is,
+                        use only the previous words as context
         :param idx: the idx-th layer representation
         :return embeddings: list of tensor in shape [batch, max_len, d_model]
         :return mask: 0-1 tensor in shape [batch, max_len], 0 for padding
         """
-        elmo_output = self.elmo(batch_to_ids(batch_stnc).cuda())
-        embeddings = elmo_output['elmo_representations']
+        elmo_ids = self.batch_to_ids(stncs, tgt_flag).cuda()
+        elmo_output = self.elmo(elmo_ids)
+        embeddings = elmo_output['elmo_representations'][idx]
         mask = elmo_output['mask']
-        if idx is not None:
-            return embeddings[idx], mask
-        else:
-            return embeddings, mask
+        if tgt_flag:
+            b_size = len(stncs)
+            embeddings = [embeddings[i][i//b_size].unsqueeze(0)
+                          for i in range(embeddings.shape[0])]
+            embeddings = torch.cat(embeddings, dim=0).view(elmo_ids.shape[1], b_size, -1)
+            embeddings = embeddings.transpose(0, 1)
+            mask = mask[-b_size:]
+        return embeddings, mask
 
 
 class ElmoTransformer(nn.Module):
-    def __init__(self, max_len, n_vocab, n_layer, n_head, d_k, d_v,
+    def __init__(self, max_len, n_vocab, n_layer, n_head, d_k, d_v, d_emb,
                  d_model, d_inner, dropout=0.1, elmo_requires_grad=False):
         super(ElmoTransformer, self).__init__()
 
         self.n_vocab = n_vocab
-
-        self.d_model = 256  # 256 is the size of small elmo
-        self.elmo_embedder = ElmoEmbedder(requires_grad=elmo_requires_grad)  # False means freeze
-
+        self.d_emb = d_emb
+        self.d_model = d_model  # 256 is the size of small elmo
+        self.elmo_embedder = ElmoEmbedder(requires_grad=elmo_requires_grad,
+                                          dropout=dropout)  # False means freeze
+        self.word_embedder = nn.Embedding(n_vocab, d_emb)
         self.position_embedder = nn.Embedding.from_pretrained(
-            get_sinusoid_encoding_table(max_len, self.d_model),
-            freeze=True
-        )
+            get_sinusoid_encoding_table(max_len, self.d_emb), freeze=True)
 
         self.encoder = EncoderShareEmbedding(n_layer, n_head, d_k, d_v,
                                              self.d_model, d_inner, dropout)
         self.decoder = DecoderShareEmbedding(n_layer, n_head, d_k, d_v,
                                              self.d_model, d_inner, dropout)
 
+        self.dropout = nn.Dropout(dropout)
         self.tgt_word_prj = nn.Linear(self.d_model, n_vocab)
 
         self.loss_layer = nn.CrossEntropyLoss(ignore_index=config.pad_index)
 
-    def get_tgt_embeddings(self, tgt_stncs, idx=0):
-        max_len = max(len(stnc) for stnc in tgt_stncs)
-        embeddings, mask = self.elmo_embedder([stnc[:1] for stnc in tgt_stncs], idx)
-        for i in range(2, max_len):
-            cur_emb, mask = self.elmo_embedder([stnc[:i] for stnc in tgt_stncs], idx)
-            embeddings = torch.cat([embeddings, cur_emb[:,-1,:].unsqueeze(1)], dim=1)
-        return embeddings, mask
-
-    def get_position_ids(self, stncs, tgt=False):
+    @ staticmethod
+    def get_position_ids(stncs, tgt_flag=False):
         max_len = max(len(s) for s in stncs)
-        if tgt:
-            max_len -= 1 # exclude </s> token
+        if tgt_flag:
+            max_len -= 1  # exclude </s> token
         pos_ids = torch.arange(max_len, dtype=torch.long)
         pos_ids = pos_ids.unsqueeze(0).expand(len(stncs), -1)
         return pos_ids.cuda()
 
-    def forward(self, src_stncs, tgt_stncs):
-        idx = 0  # choose the n-th layer output
-        src_embeds, src_mask = self.elmo_embedder(src_stncs, idx=-1)
-        src_embeds += self.position_embedder(self.get_position_ids(src_stncs))
+    def embed(self, stncs, ids, tgt_flag=False):
+        elmo_emb, mask = self.elmo_embedder(stncs, tgt_flag, idx=-1)
+        pos_emb = self.position_embedder(self.get_position_ids(stncs, tgt_flag))
+        if tgt_flag:
+            word_emb = self.word_embedder(ids[:,:-1])
+        else:
+            word_emb = self.word_embedder(ids)
+        embedding = torch.cat([elmo_emb, self.dropout(word_emb + pos_emb)], dim=-1)
+        return embedding, mask
 
-        tgt_embeds, tgt_mask = self.get_tgt_embeddings(tgt_stncs, idx=-1)
-        tgt_embeds += self.position_embedder(
-            self.get_position_ids(tgt_stncs, tgt=True))
+    def forward(self, src_stncs, tgt_stncs, src_ids, tgt_ids):
+        src_embeds, src_mask = self.embed(src_stncs, src_ids, tgt_flag=False)
+        tgt_embeds, tgt_mask = self.embed(tgt_stncs, tgt_ids, tgt_flag=True)
 
-        enc_output_list, *_ = self.encoder(src_embeds, src_mask)
+        enc_output_list, *_ = self.encoder(src_embeds, src_ids)
         dec_output, *_ = self.decoder(enc_output_list, tgt_embeds, src_mask, tgt_mask)
         logits = self.tgt_word_prj(dec_output)
         return logits
 
-
-class ElmoTransformer1(nn.Module):
-    def __init__(self, max_len, n_vocab, n_layer, n_head, d_k, d_v, d_model, d_inner,
-                 dropout=0.1, emb_prj_weight_share=True):
-        super(ElmoTransformer1, self).__init__()
-
-        self.d_model = 256  # 256 for small elmo
-        self.elmo = ElmoEmbedder(requires_grad=False)
-
-        self.encoder = EncoderShareEmbedding(n_layer, n_head, d_k, d_v, d_model, d_inner, dropout)
-        self.decoder = Decoder(n_vocab, max_len, n_layer, n_head, d_k, d_v, d_model, d_inner, dropout)
-
-        self.tgt_word_prj = nn.Linear(d_model, n_vocab)
-        if emb_prj_weight_share:
-            self.tgt_word_prj.weight = self.decoder.embedding.word_embedding.weight
-            self.logit_scale = d_model ** -0.5
-        else:
-            self.logit_scale = 1.
-
-        self.loss_layer = nn.CrossEntropyLoss(ignore_index=config.pad_index)
-
-    def forward(self, src_stncs, tgt_ids):
-        src_embeds, src_mask = self.elmo(src_stncs, idx=0)
-        tgt_ids = tgt_ids[:,:-1]
-        enc_output_list, *_ = self.encoder(src_embeds, src_mask)
-        dec_output, *_ = self.decoder(enc_output_list, src_mask, tgt_ids)
-
-        logits = self.tgt_word_prj(dec_output) * self.logit_scale
-        return logits

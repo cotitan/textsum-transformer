@@ -18,10 +18,10 @@ parser.add_argument('--n_train', type=int, default=3803900,
 parser.add_argument('--n_valid', type=int, default=189651,
                     help='Number of validation data (up to 189651 in gigaword) [default: 189651])')
 parser.add_argument('--batch_size', type=int, default=32, help='Mini batch size [default: 32]')
-parser.add_argument('--ckpt_file', type=str, default='models/elmo_layers3_translayer2_epoch0.pkl')
+parser.add_argument('--ckpt_file', type=str, default='models/elmo_small_2L_8H_512_0.pkl')
 args = parser.parse_args()
 
-save_name = "elmo_layer3_translayer2"
+save_name = "elmo_small_2L_8H_512"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,16 +46,11 @@ if not os.path.exists(model_dir):
     os.mkdir(model_dir)
 
 
-def run_batch(batch_x, batch_y, batch_y_ids, model):
-    x = batch_x.next_batch()
-    y = batch_y.next_batch()
-    y_ids = batch_y_ids.next_batch().cuda()
-    # max_len = max(len(seq) for seq in y)
-    # logits = torch.zeros(len(x), 0, model.n_vocab).cuda()
-    # for i in range(1, max_len):
-    #     logit = model(x, [seq[:i] for seq in y])  # [batch, seqlen, n_vocab]
-    #     logits = torch.cat([logits, logit[:,-1,:].unsqueeze(1)], dim=1)
-    logits = model(x, y)
+def run_batch(batch_x, batch_y, model):
+    x_stncs, x_ids = batch_x.next_batch()
+    y_stncs, y_ids = batch_y.next_batch()
+
+    logits = model(x_stncs, y_stncs, x_ids, y_ids)
     loss = model.loss_layer(logits.view(-1, logits.shape[-1]),
                             y_ids[:, 1:].contiguous().view(-1))
     return loss
@@ -92,7 +87,7 @@ def eval_model(valid_x, valid_y, vocab, model):
     model.train()
 
 
-def train(train_x, train_y, y_ids, valid_x, valid_y, valid_y_ids, model,
+def train(train_x, train_y, valid_x, valid_y, model,
           optimizer, vocab, scheduler, n_epochs=1, epoch=0):
     logging.info("Start to train with lr=%f..." % optimizer.param_groups[0]['lr'])
     n_batches = train_x.steps
@@ -100,7 +95,6 @@ def train(train_x, train_y, y_ids, valid_x, valid_y, valid_y_ids, model,
     for epoch in range(epoch, n_epochs):
         valid_x.bid = 0
         valid_y.bid = 0
-        valid_y_ids.bid = 0
 
         writer_dir = 'runs/%s_epoch%d' % (save_name, epoch)
         if os.path.isdir(writer_dir):
@@ -110,7 +104,7 @@ def train(train_x, train_y, y_ids, valid_x, valid_y, valid_y_ids, model,
         for idx in range(n_batches):
             optimizer.zero_grad()
 
-            loss = run_batch(train_x, train_y, y_ids, model)
+            loss = run_batch(train_x, train_y, model)
             loss.backward()  # do not use retain_graph=True
             # torch.nn.utils.clip_grad_value_(model.parameters(), 5)
 
@@ -120,7 +114,7 @@ def train(train_x, train_y, y_ids, valid_x, valid_y, valid_y_ids, model,
                 train_loss = loss.cpu().detach().numpy()
                 model.eval()
                 with torch.no_grad():
-                    valid_loss = run_batch(valid_x, valid_y, valid_y_ids, model)
+                    valid_loss = run_batch(valid_x, valid_y, model)
                 logging.info('epoch %d, step %d, training loss = %f, validation loss = %f'
                              % (epoch, idx + 1, train_loss, valid_loss))
                 writer.add_scalar('scalar/train_loss', train_loss, (idx + 1) // 50)
@@ -131,7 +125,7 @@ def train(train_x, train_y, y_ids, valid_x, valid_y, valid_y_ids, model,
             #     eval_model(valid_x, valid_y, vocab, model)
             # dump_tensors()
 
-        if epoch < 4:
+        if epoch < 6:
             scheduler.step()  # make sure lr will not be too small
         save_state = {'state_dict': model.state_dict(),
                       'epoch': epoch + 1,
@@ -160,27 +154,27 @@ def main():
     # emb_file = '/home/tiankeke/workspace/embeddings/giga-vec1.bin'
     # vocab, embeddings = load_word2vec_embedding(emb_file)
 
-    max_src_len = 101
-    max_tgt_len = 47
+    max_src_len = 60
+    max_tgt_len = 20
 
     bs = args.batch_size
+    n_train = args.n_train
+    n_valid = args.n_valid
 
     vocab = small_vocab
 
-    train_x = BatchManager(load_data(TRAIN_X, max_src_len, args.n_train), bs, pad=False)
-    train_y = BatchManager(load_data(TRAIN_Y, max_tgt_len, args.n_train), bs, pad=False)
-    y_ids = BatchManager(load_data(TRAIN_Y, max_tgt_len, args.n_train, vocab), bs)
-    valid_x = BatchManager(load_data(VALID_X, max_src_len, args.n_valid), bs, pad=False)
-    valid_y = BatchManager(load_data(VALID_Y, max_tgt_len, args.n_valid), bs, pad=False)
-    valid_y_ids = BatchManager(load_data(VALID_Y, max_tgt_len, args.n_valid, vocab), bs)
+    train_x = BatchManager(load_data(TRAIN_X, max_src_len, n_train), bs, vocab)
+    train_y = BatchManager(load_data(TRAIN_Y, max_tgt_len, n_train), bs, vocab)
+    valid_x = BatchManager(load_data(VALID_X, max_src_len, n_valid), bs, vocab)
+    valid_y = BatchManager(load_data(VALID_Y, max_tgt_len, n_valid), bs, vocab)
 
     # model = Transformer(len(vocab), len(vocab), max_src_len, max_tgt_len, 1, 4, 256,
     #                     64, 64, 1024, src_tgt_emb_share=True, tgt_prj_emb_share=True).cuda()
     # model = Transformer(len(vocab), len(vocab), max_src_len, max_tgt_len, 1, 6, 300,
     #                     50, 50, 1200, src_tgt_emb_share=True, tgt_prj_emb_share=True).cuda()
     # elmo_requries_grad=True after epoch 3
-    model = ElmoTransformer(max_src_len, len(vocab), 2, 4, 64, 64, 256, 1024,
-                            dropout=0.1, elmo_requires_grad=False).cuda()
+    model = ElmoTransformer(max_src_len, len(vocab), 2, 8, 64, 64, 256, 512, 2048,
+                            dropout=0.5, elmo_requires_grad=False).cuda()
 
     # print(model)
     saved_state = {'epoch': 0, 'lr': 0.001}
@@ -191,11 +185,11 @@ def main():
 
     parameters = filter(lambda p: p.requires_grad, model.parameters())
     optimizer = torch.optim.Adam(parameters, lr=saved_state['lr'])
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.3)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.5)
     scheduler.step()  # last_epoch=-1, which will not update lr at the first time
 
     # eval_model(valid_x, valid_y, vocab, model)
-    train(train_x, train_y, y_ids, valid_x, valid_y, valid_y_ids, model,
+    train(train_x, train_y, valid_x, valid_y, model,
           optimizer, vocab, scheduler, args.n_epochs, saved_state['epoch'])
 
 

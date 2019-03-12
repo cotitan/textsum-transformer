@@ -48,8 +48,8 @@ if not os.path.exists(model_dir):
 
 
 def run_batch(valid_x, valid_y, model):
-    x = valid_x.next_batch().cuda()
-    y = valid_y.next_batch().cuda()
+    _, x = valid_x.next_batch()
+    _, y = valid_y.next_batch()
     logits = model(x, y)
     loss = model.loss_layer(logits.view(-1, logits.shape[-1]),
                             y[:, 1:].contiguous().view(-1))
@@ -67,10 +67,11 @@ def eval_model(valid_x, valid_y, vocab, model):
 
     logging.info('Evaluating on a minibatch...')
     model.eval()
-    x = valid_x.next_batch().cuda()
+    _, x = valid_x.next_batch()
     with torch.no_grad():
         pred = greedy(model, x, vocab)
-    y = valid_y.next_batch()[:,1:].tolist()
+    _, y = valid_y.next_batch()
+    y = y[:,1:].tolist()
     print_summaries(pred, vocab, 'tmp/systems', '%d.txt')
     print_summaries(y, vocab, 'tmp/models', 'A.%d.txt')
 
@@ -120,8 +121,8 @@ def train(train_x, train_y, valid_x, valid_y, model,
                 writer.add_scalar('scalar/valid_loss', valid_loss, (idx + 1) // 50)
                 model.train()
                 torch.cuda.empty_cache()
-            if (idx + 1) % 2000 == 0:
-                eval_model(valid_x, valid_y, vocab, model)
+            # if (idx + 1) % 2000 == 0:
+            #     eval_model(valid_x, valid_y, vocab, model)
             # dump_tensors()
 
         if epoch < 4:
@@ -156,14 +157,15 @@ def main():
     max_tgt_len = 47
 
     bs = args.batch_size
+    n_train = args.n_train
+    n_valid = args.n_valid
 
     vocab = small_vocab
 
-    train_x = BatchManager(load_data(TRAIN_X, max_src_len, args.n_train, vocab), bs)
-    train_y = BatchManager(load_data(TRAIN_Y, max_tgt_len, args.n_train, vocab), bs)
-    valid_x = BatchManager(load_data(VALID_X, max_src_len, args.n_valid, vocab), bs)
-    valid_y = BatchManager(load_data(VALID_Y, max_tgt_len, args.n_valid, vocab), bs)
-
+    train_x = BatchManager(load_data(TRAIN_X, max_src_len, n_train), bs, vocab)
+    train_y = BatchManager(load_data(TRAIN_Y, max_tgt_len, n_train), bs, vocab)
+    valid_x = BatchManager(load_data(VALID_X, max_src_len, n_valid), bs, vocab)
+    valid_y = BatchManager(load_data(VALID_Y, max_tgt_len, n_valid), bs, vocab)
     # model = Transformer(len(vocab), len(vocab), max_src_len, max_tgt_len, 1, 4, 256,
     #                     64, 64, 1024, src_tgt_emb_share=True, tgt_prj_emb_share=True).cuda()
     # model = Transformer(len(vocab), len(vocab), max_src_len, max_tgt_len, 1, 6, 300,
@@ -183,7 +185,7 @@ def main():
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.3)
     scheduler.step()  # last_epoch=-1, which will not update lr at the first time
 
-    eval_model(valid_x, valid_y, vocab, model)
+    # eval_model(valid_x, valid_y, vocab, model)
     train(train_x, train_y, valid_x, valid_y, model,
           optimizer, vocab, scheduler, args.n_epochs, saved_state['epoch'])
 
