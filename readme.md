@@ -6,8 +6,10 @@
 - pytorch==0.4.0
 - numpy==1.12.1+
 - python==3.5+
+- tensorboardx==1.2*
 - word2vec==0.10.2*
 - allennlp==0.8.2*
+- pyrouge==0.1.3*
 
 ### Data
 Training and evaluation data for Gigaword is available https://drive.google.com/open?id=0B6N7tANPyVeBNmlSX19Ld2xDU1E
