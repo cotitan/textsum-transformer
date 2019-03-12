@@ -2,10 +2,12 @@
 - author: Kirk
 - mail: cotitan@outlook.com
 
-### Requirments
+### Requirments, * means not necessary
 - pytorch==0.4.0
 - numpy==1.12.1+
-- python=3.5+
+- python==3.5+
+- word2vec==0.10.2*
+- allennlp==0.8.2*
 
 ### Data
 Training and evaluation data for Gigaword is available https://drive.google.com/open?id=0B6N7tANPyVeBNmlSX19Ld2xDU1E
@@ -17,26 +19,23 @@ Training and evaluation data for CNN/DM is available https://s3.amazonaws.com/op
 
 ### Directories:
 ```
-.
-├── Beam.py
-├── Model.py
+.                  
+├── log           
+├── models         
+├── sumdata       
+├── tmp           
+├── transformer 
+├── Beam.py       
+├── config.py    
+├── train.py          
+├── mytest.py        
 ├── Transformer.py
-├── mytest.py
-├── train.py
-├── utils.py
-├── sumdata/
-|   ├── DUC2003/
-|   ├── DUC2004/
-|   ├── Giga/
-|   ├── train/
-|   └── vocab.json # will be built automatically if not exists
-├── readme.md
-├── log/
-└── models/
+├── translate.py  
+└── utils.py      
 ```
 Make sure your project contains the folders above.
 
 ### How-to
-1. Run _python train.py_ to train, it takes about 3.5h per epoch.
+1. Run _python train.py_ to train
 2. Run _python mytest.py_ to generate summaries
 
