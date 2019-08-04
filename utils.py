@@ -1,13 +1,10 @@
 import json
 import numpy as np
 from collections import defaultdict
-from torch.utils.data import Dataset, DataLoader
-from torch.nn.utils.rnn import pad_sequence
 import torch
-import threading
-import word2vec  # used for load word2vec embeddings, comment this line if you don't need this
 import os
 import config
+import random
 
 pad_tok = config.pad_tok
 start_tok = config.start_tok
@@ -28,6 +25,13 @@ def my_pad_sequence(batch, pad_tok):
     max_len = max([len(b) for b in batch])
     batch = [b + [pad_tok] * (max_len - len(b)) for b in batch]
     return batch
+
+
+def shuffle(bm1, bm2):
+	c = list(zip(bm1.data, bm2.data))
+	random.shuffle(c)
+	bm1.data, bm2.data = zip(*c)
+	return bm1, bm2
 
 
 class BatchManager:
@@ -80,27 +84,6 @@ def build_vocab(filelist=['sumdata/train/train.article.txt', 'sumdata/train/trai
     json.dump(vocab, open(vocab_file,'w'))
     return vocab
 
-
-def load_embedding_vocab(embedding_path):
-    fin = open(embedding_path)
-    vocab = set([])
-    for _, line in enumerate(fin):
-        vocab.add(line.split()[0])
-    return vocab
-
-
-def load_word2vec_embedding(filepath):
-    w2v = word2vec.load(filepath)
-    weights = w2v.vectors
-    vocab = {}
-    if pad_tok not in w2v.vocab:
-        vocab[pad_tok] = 0
-        weights = np.concatenate([np.zeros((1, weights.shape[1])), weights], axis=0)
-    for tok in w2v.vocab:
-        vocab[tok] = len(vocab)
-    return vocab, torch.tensor(weights, dtype=torch.float)
-
-
 def get_vocab(TRAIN_X, TRAIN_Y):
     src_vocab_file = "sumdata/src_vocab.json"
     if not os.path.exists(src_vocab_file):
@@ -136,49 +119,3 @@ def load_data(filename, max_len, n_data=None):
         datas.append(words)
     return datas
 
-
-class MyDatasets(Dataset):
-    def __init__(self, filename, vocab, n_data=None):
-        self.datas = load_data(filename, vocab, n_data)
-        self._size = len(self.datas)
-    
-    def __getitem__(self, idx):
-        return self.datas[idx]
-    
-    def __len__(self):
-        return self._size
-
-
-def pretty_size(size):
-    """Pretty prints a torch.Size object"""
-    assert(isinstance(size, torch.Size))
-    return " × ".join(map(str, size))
-
-
-def dump_tensors(gpu_only=True):
-    """ GPU memory debugger
-    Prints a list of the Tensors being tracked by the garbage collector."""
-    import gc
-    total_size = 0
-    for obj in gc.get_objects():
-        try:
-            if torch.is_tensor(obj):
-                if not gpu_only or obj.is_cuda:
-                    print("%s:%s%s %s" % (type(obj).__name__,
-                                          " GPU" if obj.is_cuda else "",
-                                          " pinned" if obj.is_pinned else "",
-                                          pretty_size(obj.size())))
-                    total_size += obj.numel()
-            elif hasattr(obj, "data") and torch.is_tensor(obj.data):
-                if not gpu_only or obj.is_cuda:
-                    print("%s → %s:%s%s%s%s %s" % (type(obj).__name__,
-                                                   type(obj.data).__name__,
-                                                   " GPU" if obj.is_cuda else "",
-                                                   " pinned" if obj.data.is_pinned else "",
-                                                   " grad" if obj.requires_grad else "",
-                                                   " volatile" if obj.volatile else "",
-                                                   pretty_size(obj.data.size())))
-                    total_size += obj.data.numel()
-        except Exception as e:
-            pass
-    print("Total size:", total_size)

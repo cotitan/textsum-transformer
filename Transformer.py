@@ -3,7 +3,7 @@ from torch import nn
 import numpy as np
 import config
 # use elmo embeddings, comment the following line if you don't need it
-from allennlp.modules.elmo import Elmo, batch_to_ids
+# from allennlp.modules.elmo import Elmo, batch_to_ids
 
 pad_index = config.pad_index
 
@@ -87,38 +87,52 @@ class ScaledDotAttention(nn.Module):
 
 
 class MultiheadAttention(nn.Module):
-    def __init__(self, n_head, d_k, d_v, d_model, dropout=0.1):
-        super(MultiheadAttention, self).__init__()
-        self.n_head = n_head
-        self.W_Q = nn.Linear(d_model, d_k * n_head)
-        self.W_K = nn.Linear(d_model, d_k * n_head)
-        self.W_V = nn.Linear(d_model, d_v * n_head)
-        self.W_O = nn.Linear(d_v * n_head, d_model)
+	def __init__(self, n_head, d_model, dropout=0.1):
+		super(MultiheadAttention, self).__init__()
+		self.n_head = n_head
+		d_k = d_model // n_head
+		d_v = d_model // n_head
+		self.W_Q = nn.Linear(d_model, d_k * n_head)
+		self.W_K = nn.Linear(d_model, d_k * n_head)
+		self.W_V = nn.Linear(d_model, d_v * n_head)
+		self.W_O = nn.Linear(d_v * n_head, d_model)
 
-        self.attn_layer = ScaledDotAttention()
-        self.dropout = nn.Dropout(p=dropout)
-        self.layer_norm = nn.LayerNorm(d_model)
+		self.attn_layer = ScaledDotAttention()
+		self.dropout = nn.Dropout(p=dropout)
+		self.layer_norm = nn.LayerNorm(d_model)
 
-    def forward(self, Q, K, V, mask):
-        """
-        """
-        residual = Q
-        Qs = self.W_Q(Q).view(Q.size(0), Q.size(1), self.n_head, -1)
-        Ks = self.W_K(K).view(K.size(0), K.size(1), self.n_head, -1)
-        Vs = self.W_V(V).view(V.size(0), V.size(1), self.n_head, -1)
+	def forward(self, Q, K, V, mask):
+		"""
 
-        context_attn = [self.attn_layer(Qs[:,:,i,:], Ks[:,:,i,:], Vs[:,:,i,:], mask)
-                    for i in range(self.n_head)]
-        context = [x[0] for x in context_attn]
-        attn_weight = [x[1] for x in context_attn]
+		:param Q: size=[bsz, l_q, d]
+		:param K: size=[bsz, l_k, d]
+		:param V: size=[bsz, l_k, d]
+		:param mask: size=[bsz, l_q, l_k]
+		:return:
+		"""
+		(bsz, l_q, d), l_k = Q.shape, K.shape[1]
+		n = self.n_head
 
-        context = torch.cat(context, dim=-1)
-        output = self.W_O(context)
-        # TODO try output = self.layer_norm(self.dropout(output+residual))
-        # instead of self.layer_norm(self.dropout(output) + residual)
-        output = self.dropout(output)
-        output = self.layer_norm(output + residual)
-        return output, attn_weight
+		residual = Q
+		Qs = self.W_Q(Q).view(bsz, l_q, n, -1).transpose(1,2).contiguous().view(bsz * n, l_q, -1)
+		Ks = self.W_K(K).view(bsz, l_k, n, -1).transpose(1,2).contiguous().view(bsz * n, l_k, -1)
+		Vs = self.W_V(V).view(bsz, l_k, n, -1).transpose(1,2).contiguous().view(bsz * n, l_k, -1)
+
+		mask = torch.cat([mask for _ in range(n)], dim=0)
+		# [bsz * n, l_q, d // n],  [bsz * n, l_q, l_k]
+		context, attns = self.attn_layer(Qs, Ks, Vs, mask)
+
+		context = context.view(bsz, n, l_q, -1).transpose(1, 2).contiguous().view(bsz, l_q, d)
+		attns = attns.view(bsz, n, l_q, l_k).transpose(0, 1)  # [n, bsz, l_q, l_k]
+
+		# attn_weight = torch.cat(attn_weight, dim=-1)
+		output = self.W_O(context)
+		# TODO try output = self.layer_norm(self.dropout(output+residual))
+		# instead of self.layer_norm(self.dropout(output) + residual)
+		output = self.dropout(output)
+		output = self.layer_norm(output + residual)
+		return output, context, attns.sum(dim=0) / n
+		# return output, context, attn_weight
 
 
 class PositionWiseFeedForwardNet(nn.Module):
@@ -147,24 +161,24 @@ class PositionWiseFeedForwardNet(nn.Module):
 
 
 class EncoderLayer(nn.Module):
-    def __init__(self, n_head, d_k, d_v, d_model, d_inner, dropout=0.1):
+    def __init__(self, n_head, d_model, d_inner, dropout=0.1):
         super(EncoderLayer, self).__init__()
-        self.multi_attn = MultiheadAttention(n_head, d_k, d_v, d_model, dropout)
+        self.multi_attn = MultiheadAttention(n_head, d_model, dropout)
         self.poswise_ffn = PositionWiseFeedForwardNet(d_model, d_inner, dropout)
 
     def forward(self, enc_inputs, mask=None):
-        output, attn_weights = self.multi_attn(enc_inputs, enc_inputs, enc_inputs, mask)
+        output, _, attn_weights = self.multi_attn(enc_inputs, enc_inputs, enc_inputs, mask)
         output = self.poswise_ffn(output)
         return output, attn_weights
 
 
 class Encoder(nn.Module):
     def __init__(self, n_vocab, max_seq_len, n_layer, n_head,
-                 d_k, d_v, d_model, d_inner, dropout=0.1, embeddings=None):
+                 d_model, d_inner, dropout=0.1, embeddings=None):
         super(Encoder, self).__init__()
         self.embedding = Embedding(n_vocab, d_model, max_seq_len, embeddings)
         self.layers = nn.ModuleList(
-            [EncoderLayer(n_head, d_k, d_v, d_model, d_inner, dropout) for _ in range(n_layer)]
+            [EncoderLayer(n_head, d_model, d_inner, dropout) for _ in range(n_layer)]
         )
     
     def forward(self, src_seq):
@@ -184,18 +198,18 @@ class Encoder(nn.Module):
 
 
 class DecoderLayer(nn.Module):
-    def __init__(self, n_head, d_k, d_v, d_model, d_inner, dropout=0.1):
+    def __init__(self, n_head, d_model, d_inner, dropout=0.1):
         super(DecoderLayer, self).__init__()
-        self.multi_attn_masked = MultiheadAttention(n_head, d_k, d_v, d_model, dropout)
-        self.multi_attn = MultiheadAttention(n_head, d_k, d_v, d_model, dropout)
+        self.multi_attn_masked = MultiheadAttention(n_head, d_model, dropout)
+        self.multi_attn = MultiheadAttention(n_head, d_model, dropout)
         self.poswise_ffn = PositionWiseFeedForwardNet(d_model, d_inner, dropout)
     
     def forward(self, enc_outputs, dec_inputs, self_mask=None, dec_enc_mask=None):
-        dec_outputs, self_attns = self.multi_attn_masked(
+        dec_outputs, _, self_attns = self.multi_attn_masked(
             dec_inputs, dec_inputs, dec_inputs, self_mask
         )
         
-        dec_outputs, dec_enc_attns = self.multi_attn(
+        dec_outputs, _, dec_enc_attns = self.multi_attn(
             dec_outputs, enc_outputs, enc_outputs, dec_enc_mask
         )
 
@@ -205,11 +219,11 @@ class DecoderLayer(nn.Module):
 
 class Decoder(nn.Module):
     def __init__(self, n_vocab, max_seq_len, n_layer, n_head,
-                 d_k, d_v, d_model, d_inner, dropout=0.1, embeddings=None):
+                 d_model, d_inner, dropout=0.1, embeddings=None):
         super(Decoder, self).__init__()
         self.embedding = Embedding(n_vocab, d_model, max_seq_len, embeddings)
         self.layers = nn.ModuleList(
-            [DecoderLayer(n_head, d_k, d_v, d_model, d_inner, dropout) for _ in range(n_layer)]
+            [DecoderLayer(n_head, d_model, d_inner, dropout) for _ in range(n_layer)]
         )
 
     def forward(self, enc_outputs_list, src_seq, tgt_seq):
@@ -237,14 +251,14 @@ class Decoder(nn.Module):
 
 class Transformer(nn.Module):
     def __init__(self, n_src_vocab, n_tgt_vocab, max_src_len, max_tgt_len, n_layer,
-                 n_head, d_model, d_k, d_v, d_inner, dropout=0.1, embeddings=None,
-                 src_tgt_emb_share=True, tgt_prj_emb_share=True):
+                 n_head, d_model, d_inner, dropout=0.1, embeddings=None,
+                 src_tgt_emb_share=True, tgt_prj_wt_share=True):
         super(Transformer, self).__init__()
 
         self.encoder = Encoder(n_src_vocab, max_src_len, n_layer, n_head,
-                               d_k, d_v, d_model, d_inner, dropout, embeddings)
+                               d_model, d_inner, dropout, embeddings)
         self.decoder = Decoder(n_tgt_vocab, max_tgt_len, n_layer, n_head,
-                               d_k, d_v, d_model, d_inner, dropout, embeddings)
+                               d_model, d_inner, dropout, embeddings)
 
         self.tgt_word_proj = nn.Linear(d_model, n_tgt_vocab, bias=False)
 
@@ -255,7 +269,7 @@ class Transformer(nn.Module):
             self.encoder.embedding.word_embedding.weight \
                 = self.decoder.embedding.word_embedding.weight
 
-        if tgt_prj_emb_share:
+        if tgt_prj_wt_share:
             self.tgt_word_proj.weight = self.decoder.embedding.word_embedding.weight
             self.logit_scale = (d_model ** -0.5)
             # self.logit_scale = 1.
@@ -273,10 +287,10 @@ class Transformer(nn.Module):
 
 
 class EncoderShareEmbedding(nn.Module):
-    def __init__(self, n_layer, n_head, d_k, d_v, d_model, d_inner, dropout=0.1):
+    def __init__(self, n_layer, n_head, d_model, d_inner, dropout=0.1):
         super(EncoderShareEmbedding, self).__init__()
         self.layers = nn.ModuleList(
-            [EncoderLayer(n_head, d_k, d_v, d_model, d_inner, dropout) for _ in range(n_layer)]
+            [EncoderLayer(n_head, d_model, d_inner, dropout) for _ in range(n_layer)]
         )
 
     def forward(self, enc_inputs, src_seq):
@@ -295,10 +309,10 @@ class EncoderShareEmbedding(nn.Module):
 
 
 class DecoderShareEmbedding(nn.Module):
-    def __init__(self, n_layer, n_head, d_k, d_v, d_model, d_inner, dropout=0.1):
+    def __init__(self, n_layer, n_head, d_model, d_inner, dropout=0.1):
         super(DecoderShareEmbedding, self).__init__()
         self.layers = nn.ModuleList(
-            [DecoderLayer(n_head, d_k, d_v, d_model, d_inner, dropout) for _ in range(n_layer)]
+            [DecoderLayer(n_head, d_model, d_inner, dropout) for _ in range(n_layer)]
         )
 
     def forward(self, enc_outputs_list, dec_inputs, src_seq, tgt_seq):
@@ -328,16 +342,15 @@ class DecoderShareEmbedding(nn.Module):
 
 class TransformerShareEmbedding(nn.Module):
     def __init__(self, n_vocab, max_seq_len, n_layer, n_head,
-                 d_model, d_k, d_v, d_inner, tgt_prj_share=False,
-                 embeddings=None):
+                 d_model, d_inner, tgt_prj_wt_share=False, embeddings=None):
         super(TransformerShareEmbedding, self).__init__()
 
         self.embedding = Embedding(n_vocab, d_model, max_seq_len, embeddings=embeddings)
         
-        self.encoder = EncoderShareEmbedding(n_layer, n_head, d_k, d_v, d_model, d_inner)
-        self.decoder = DecoderShareEmbedding(n_layer, n_head, d_k, d_v, d_model, d_inner)
+        self.encoder = EncoderShareEmbedding(n_layer, n_head, d_model, d_inner)
+        self.decoder = DecoderShareEmbedding(n_layer, n_head, d_model, d_inner)
 
-        if tgt_prj_share:
+        if tgt_prj_wt_share:
             self.tgt_word_proj = nn.Linear(d_model, n_vocab)
             self.tgt_word_proj.weight = self.embedding.word_embedding.weight
             self.logit_scale = (d_model ** -0.5)
@@ -414,23 +427,20 @@ class ElmoEmbedder(nn.Module):
 
 
 class ElmoTransformer(nn.Module):
-    def __init__(self, max_len, n_vocab, n_layer, n_head, d_k, d_v, d_emb,
+    def __init__(self, max_len, n_vocab, n_layer, n_head,
                  d_model, d_inner, dropout=0.1, elmo_requires_grad=False):
         super(ElmoTransformer, self).__init__()
 
         self.n_vocab = n_vocab
-        self.d_emb = d_emb
         self.d_model = d_model  # 256 is the size of small elmo
         self.elmo_embedder = ElmoEmbedder(requires_grad=elmo_requires_grad,
                                           dropout=dropout)  # False means freeze
-        self.word_embedder = nn.Embedding(n_vocab, d_emb)
+        self.word_embedder = nn.Embedding(n_vocab, d_model)
         self.position_embedder = nn.Embedding.from_pretrained(
             get_sinusoid_encoding_table(max_len, self.d_emb), freeze=True)
 
-        self.encoder = EncoderShareEmbedding(n_layer, n_head, d_k, d_v,
-                                             self.d_model, d_inner, dropout)
-        self.decoder = DecoderShareEmbedding(n_layer, n_head, d_k, d_v,
-                                             self.d_model, d_inner, dropout)
+        self.encoder = EncoderShareEmbedding(n_layer, n_head, d_model, d_inner, dropout)
+        self.decoder = DecoderShareEmbedding(n_layer, n_head, d_model, d_inner, dropout)
 
         self.dropout = nn.Dropout(dropout)
         self.tgt_word_prj = nn.Linear(self.d_model, n_vocab)

@@ -6,7 +6,8 @@ import torch
 import argparse
 from Transformer import Transformer, TransformerShareEmbedding
 from tensorboardX import SummaryWriter
-from utils import BatchManager, load_data, get_vocab, build_vocab, load_word2vec_embedding, dump_tensors
+import utils
+from utils import BatchManager, load_data, get_vocab, build_vocab
 from pyrouge import Rouge155
 from translate import greedy, print_summaries
 
@@ -88,6 +89,12 @@ def eval_model(valid_x, valid_y, vocab, model):
     model.train()
 
 
+def adjust_lr(optimizer, epoch):
+	if (epoch + 1) % 3 == 0:
+		# optimizer.param_groups[0]['lr'] *= math.sqrt((epoch+1)/10)
+		optimizer.param_groups[0]['lr'] *= 0.5
+
+
 def train(train_x, train_y, valid_x, valid_y, model,
           optimizer, vocab, scheduler, n_epochs=1, epoch=0):
     logging.info("Start to train with lr=%f..." % optimizer.param_groups[0]['lr'])
@@ -120,13 +127,11 @@ def train(train_x, train_y, valid_x, valid_y, model,
                 writer.add_scalar('scalar/train_loss', train_loss, (idx + 1) // 50)
                 writer.add_scalar('scalar/valid_loss', valid_loss, (idx + 1) // 50)
                 model.train()
-                torch.cuda.empty_cache()
             # if (idx + 1) % 2000 == 0:
             #     eval_model(valid_x, valid_y, vocab, model)
             # dump_tensors()
 
-        if epoch < 4:
-            scheduler.step()  # make sure lr will not be too small
+        adjust_lr(optimizer, epoch)
         save_state = {'state_dict': model.state_dict(),
                       'epoch': epoch + 1,
                       'lr': optimizer.param_groups[0]['lr']}
@@ -138,7 +143,7 @@ def train(train_x, train_y, valid_x, valid_y, model,
 def main():
     print(args)
 
-    data_dir = '/home/tiankeke/workspace/datas/sumdata/'
+    data_dir = '/home/disk3/tiankeke/sumdata/'
     TRAIN_X = os.path.join(data_dir, 'train/train.article.txt')
     TRAIN_Y = os.path.join(data_dir, 'train/train.title.txt')
     VALID_X = os.path.join(data_dir, 'train/valid.article.filter.txt')
@@ -153,8 +158,8 @@ def main():
     # emb_file = '/home/tiankeke/workspace/embeddings/giga-vec1.bin'
     # vocab, embeddings = load_word2vec_embedding(emb_file)
 
-    max_src_len = 101
-    max_tgt_len = 47
+    max_src_len = 100
+    max_tgt_len = 40
 
     bs = args.batch_size
     n_train = args.n_train
@@ -164,14 +169,17 @@ def main():
 
     train_x = BatchManager(load_data(TRAIN_X, max_src_len, n_train), bs, vocab)
     train_y = BatchManager(load_data(TRAIN_Y, max_tgt_len, n_train), bs, vocab)
+    train_x, train_y = utils.shuffle(train_x, train_y)
+
     valid_x = BatchManager(load_data(VALID_X, max_src_len, n_valid), bs, vocab)
     valid_y = BatchManager(load_data(VALID_Y, max_tgt_len, n_valid), bs, vocab)
+    valid_x, valid_y = utils.shuffle(valid_x, valid_y)
     # model = Transformer(len(vocab), len(vocab), max_src_len, max_tgt_len, 1, 4, 256,
-    #                     64, 64, 1024, src_tgt_emb_share=True, tgt_prj_emb_share=True).cuda()
-    # model = Transformer(len(vocab), len(vocab), max_src_len, max_tgt_len, 1, 6, 300,
-    #                     50, 50, 1200, src_tgt_emb_share=True, tgt_prj_emb_share=True).cuda()
-    model = TransformerShareEmbedding(len(vocab), max_src_len, 1, 6,
-                                      300, 50, 50, 1200, False).cuda()
+    #                     64, 64, 1024, src_tgt_emb_share=True, tgt_prj_wt_share=True).cuda()
+    model = Transformer(len(vocab), len(vocab), 200, 200, 2, 4, 256,
+                        1024, src_tgt_emb_share=False, tgt_prj_wt_share=True).cuda()
+    # model = TransformerShareEmbedding(len(vocab), max_src_len, 2, 4,
+    #                                   256, 1024, False, True).cuda()
 
     # print(model)
     saved_state = {'epoch': 0, 'lr': 0.001}
