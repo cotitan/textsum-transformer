@@ -134,12 +134,12 @@ class MultiheadAttention(nn.Module):
 		return output, context, attns.sum(dim=0) / n
 		# return output, context, attn_weight
 
-
+        
 class PositionWiseFeedForwardNet(nn.Module):
     def __init__(self, d_model, d_inner, dropout=0.1):
         super(PositionWiseFeedForwardNet, self).__init__()
-        self.conv1 = nn.Conv1d(d_model, d_inner, 1, bias=True)
-        self.conv2 = nn.Conv1d(d_inner, d_model, 1, bias=True)
+        self.w1 = nn.Linear(d_model, d_inner, bias=True)
+        self.w1 = nn.Linear(d_inner, d_model, bias=True)
         self.relu = nn.ReLU()
         self.layer_norm = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(p=dropout)
@@ -149,15 +149,36 @@ class PositionWiseFeedForwardNet(nn.Module):
         :param inputs: [batch, src_len, d_model]
         """
         residual = inputs
-        # why transpose?
-        # w1 = [C_in, C_out, kernel_size]
-        # which requires input.shape=[N, C_in, L], C_in == in_channels
-        # output.shape=[N, C_out, L], N is batch_size
-        output = self.relu(self.conv1(inputs.transpose(-1, -2)))
-        output = self.conv2(output).transpose(-1, -2)
+        output = self.relu(self.w1(inputs))
+        output = self.w2(output)
         output = self.dropout(output)
         output = self.layer_norm(output + residual)
         return output
+
+
+# class PositionWiseFeedForwardNet(nn.Module):
+#     def __init__(self, d_model, d_inner, dropout=0.1):
+#         super(PositionWiseFeedForwardNet, self).__init__()
+#         self.conv1 = nn.Conv1d(d_model, d_inner, 1, bias=True)
+#         self.conv2 = nn.Conv1d(d_inner, d_model, 1, bias=True)
+#         self.relu = nn.ReLU()
+#         self.layer_norm = nn.LayerNorm(d_model)
+#         self.dropout = nn.Dropout(p=dropout)
+    
+#     def forward(self, inputs):
+#         """
+#         :param inputs: [batch, src_len, d_model]
+#         """
+#         residual = inputs
+#         # why transpose?
+#         # w1 = [C_in, C_out, kernel_size]
+#         # which requires input.shape=[N, C_in, L], C_in == in_channels
+#         # output.shape=[N, C_out, L], N is batch_size
+#         output = self.relu(self.conv1(inputs.transpose(-1, -2)))
+#         output = self.conv2(output).transpose(-1, -2)
+#         output = self.dropout(output)
+#         output = self.layer_norm(output + residual)
+#         return output
 
 
 class EncoderLayer(nn.Module):
