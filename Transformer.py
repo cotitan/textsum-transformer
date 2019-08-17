@@ -194,7 +194,7 @@ class Encoder(nn.Module):
             enc_output_list.append(enc_output)
             attn_weight_list.append(attn_weight)
 
-        return enc_output_list, attn_weight_list
+        return enc_output, attn_weight_list
 
 
 class DecoderLayer(nn.Module):
@@ -226,8 +226,8 @@ class Decoder(nn.Module):
             [DecoderLayer(n_head, d_model, d_inner, dropout) for _ in range(n_layer)]
         )
 
-    def forward(self, enc_outputs_list, src_seq, tgt_seq):
-        """ Noticement: enc_outputs is a list  """
+    def forward(self, enc_outputs, src_seq, tgt_seq):
+        """  """
         dec_slf_mask = get_attn_mask(tgt_seq, tgt_seq)
         dec_subseq_mask = get_subsequent_mask(tgt_seq)
         dec_slf_mask = (dec_slf_mask + dec_subseq_mask).gt(0)
@@ -238,7 +238,7 @@ class Decoder(nn.Module):
         dec_enc_attn_list = []
 
         dec_outputs = self.embedding(tgt_seq)  # init
-        enc_outputs = enc_outputs_list[-1]  # use only the top layer
+        
         for layer in self.layers:
             dec_outputs, dec_slf_attn, dec_enc_attn = \
                 layer(enc_outputs, dec_outputs, dec_slf_mask, dec_enc_mask)
@@ -279,11 +279,20 @@ class Transformer(nn.Module):
         self.loss_layer = nn.CrossEntropyLoss(ignore_index=pad_index)
 
     def forward(self, src_seq, tgt_seq):
+        enc_outputs, *_ = self.encoder(src_seq)
+
         tgt_seq = tgt_seq[:, :-1]
-        enc_output_list, *_ = self.encoder(src_seq)
-        dec_outputs, *_ = self.decoder(enc_output_list, src_seq, tgt_seq)
+        logits, dec_enc_attn = self.decode(enc_outputs, src_seq, tgt_seq)
+        return logits * self.logit_scale, dec_enc_attn
+
+    def encode(self, src_seq):
+        enc_outputs, *_ = self.encoder(src_seq)
+        return enc_outputs
+
+    def decode(self, enc_outputs, src_seq, tgt_seq):
+        dec_outputs, _, dec_enc_attn_list = self.decoder(enc_outputs, src_seq, tgt_seq)
         logits = self.tgt_word_proj(dec_outputs)
-        return logits * self.logit_scale
+        return logits * self.logit_scale, dec_enc_attn_list[-1]
 
 
 class EncoderShareEmbedding(nn.Module):
@@ -315,7 +324,7 @@ class DecoderShareEmbedding(nn.Module):
             [DecoderLayer(n_head, d_model, d_inner, dropout) for _ in range(n_layer)]
         )
 
-    def forward(self, enc_outputs_list, dec_inputs, src_seq, tgt_seq):
+    def forward(self, enc_output_list, dec_inputs, src_seq, tgt_seq):
         """
         Noticement: enc_outputs is a list
         """
@@ -329,7 +338,7 @@ class DecoderShareEmbedding(nn.Module):
         dec_enc_attn_list = []
 
         dec_outputs = dec_inputs
-        enc_outputs = enc_outputs_list[-1]  # use only the top layer
+        enc_outputs = enc_output_list[-1]  # use only the top layer
         for layer in self.layers:
             dec_outputs, dec_slf_attn, dec_enc_attn = \
                 layer(enc_outputs, dec_outputs, dec_slf_mask, dec_enc_mask)

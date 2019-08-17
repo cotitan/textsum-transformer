@@ -19,10 +19,7 @@ parser.add_argument('--n_train', type=int, default=3803900,
 parser.add_argument('--n_valid', type=int, default=189651,
                     help='Number of validation data (up to 189651 in gigaword) [default: 189651])')
 parser.add_argument('--batch_size', type=int, default=64, help='Mini batch size [default: 32]')
-parser.add_argument('--emb_dim', type=int, default=300, help='Embedding size [default: 256]')
-parser.add_argument('--hid_dim', type=int, default=512, help='Hidden state size [default: 256]')
-parser.add_argument('--maxout_dim', type=int, default=2, help='Maxout size [default: 2]')
-parser.add_argument('--ckpt_file', type=str, default='./models/params_v2_0.pkl')
+parser.add_argument('--ckpt_file', type=str, default='./ckpts/params_v2_9.pkl')
 args = parser.parse_args()
 
 logging.basicConfig(
@@ -43,7 +40,7 @@ console.setFormatter(formatter)
 # add the handler to the root logger
 logging.getLogger('').addHandler(console)
 
-model_dir = './models'
+model_dir = './ckpts'
 if not os.path.exists(model_dir):
     os.mkdir(model_dir)
 
@@ -51,7 +48,7 @@ if not os.path.exists(model_dir):
 def run_batch(valid_x, valid_y, model):
     _, x = valid_x.next_batch()
     _, y = valid_y.next_batch()
-    logits = model(x, y)
+    logits, _ = model(x, y)
     loss = model.loss_layer(logits.view(-1, logits.shape[-1]),
                             y[:, 1:].contiguous().view(-1))
     return loss
@@ -90,7 +87,7 @@ def eval_model(valid_x, valid_y, vocab, model):
 
 
 def adjust_lr(optimizer, epoch):
-	if (epoch + 1) % 3 == 0:
+	if (epoch + 1) % 2 == 0:
 		# optimizer.param_groups[0]['lr'] *= math.sqrt((epoch+1)/10)
 		optimizer.param_groups[0]['lr'] *= 0.5
 
@@ -177,7 +174,7 @@ def main():
     # model = Transformer(len(vocab), len(vocab), max_src_len, max_tgt_len, 1, 4, 256,
     #                     64, 64, 1024, src_tgt_emb_share=True, tgt_prj_wt_share=True).cuda()
     model = Transformer(len(vocab), len(vocab), 200, 200, 2, 4, 256,
-                        1024, src_tgt_emb_share=False, tgt_prj_wt_share=True).cuda()
+                        1024, src_tgt_emb_share=True, tgt_prj_wt_share=True).cuda()
     # model = TransformerShareEmbedding(len(vocab), max_src_len, 2, 4,
     #                                   256, 1024, False, True).cuda()
 
