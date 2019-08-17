@@ -84,6 +84,18 @@ def build_vocab(filelist=['sumdata/train/train.article.txt', 'sumdata/train/trai
     json.dump(vocab, open(vocab_file,'w'))
     return vocab
 
+
+def load_vocab(vocab_file, vocab_size=None):
+    fin = open(vocab_file)
+    vocab = {}
+    if vocab_size is None:
+        vocab_size = int(1e9)  # means the whole vocab
+    for word in list(fin.readlines())[:vocab_size]:
+        vocab[word.strip()] = len(vocab)  # [:-1] to remove \n
+    fin.close()
+    return vocab
+
+    
 def get_vocab(TRAIN_X, TRAIN_Y):
     src_vocab_file = "sumdata/src_vocab.json"
     if not os.path.exists(src_vocab_file):

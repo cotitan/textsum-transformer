@@ -139,7 +139,7 @@ class PositionWiseFeedForwardNet(nn.Module):
     def __init__(self, d_model, d_inner, dropout=0.1):
         super(PositionWiseFeedForwardNet, self).__init__()
         self.w1 = nn.Linear(d_model, d_inner, bias=True)
-        self.w1 = nn.Linear(d_inner, d_model, bias=True)
+        self.w2 = nn.Linear(d_inner, d_model, bias=True)
         self.relu = nn.ReLU()
         self.layer_norm = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(p=dropout)

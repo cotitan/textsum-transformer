@@ -7,7 +7,7 @@ import argparse
 from Transformer import Transformer, TransformerShareEmbedding
 from tensorboardX import SummaryWriter
 import utils
-from utils import BatchManager, load_data, get_vocab, build_vocab
+from utils import BatchManager, load_data, load_vocab, build_vocab
 from pyrouge import Rouge155
 from translate import greedy, print_summaries
 
@@ -93,17 +93,19 @@ def adjust_lr(optimizer, epoch):
 
 
 def train(train_x, train_y, valid_x, valid_y, model,
-          optimizer, vocab, scheduler, n_epochs=1, epoch=0):
+          optimizer, tgt_vocab, scheduler, n_epochs=1, epoch=0):
     logging.info("Start to train with lr=%f..." % optimizer.param_groups[0]['lr'])
     n_batches = train_x.steps
     model.train()
+
+    if os.path.isdir('runs/epoch%d' % epoch):
+        shutil.rmtree('runs/epoch%d' % epoch)
+    writer = SummaryWriter('runs/epoch%d' % epoch)
+    i = epoch * train_x.steps
     for epoch in range(epoch, n_epochs):
         valid_x.bid = 0
         valid_y.bid = 0
 
-        if os.path.isdir('runs/epoch%d' % epoch):
-            shutil.rmtree('runs/epoch%d' % epoch)
-        writer = SummaryWriter('runs/epoch%d' % epoch)
 
         for idx in range(n_batches):
             optimizer.zero_grad()
@@ -119,13 +121,14 @@ def train(train_x, train_y, valid_x, valid_y, model,
                 model.eval()
                 with torch.no_grad():
                     valid_loss = run_batch(valid_x, valid_y, model)
-                logging.info('epoch %d, step %d, training loss = %f, validation loss = %f'
+                logging.info('epoch %d: %d, training loss = %f, validation loss = %f'
                              % (epoch, idx + 1, train_loss, valid_loss))
-                writer.add_scalar('scalar/train_loss', train_loss, (idx + 1) // 50)
-                writer.add_scalar('scalar/valid_loss', valid_loss, (idx + 1) // 50)
+                writer.add_scalar('scalar/train_loss', train_loss, i)
+                writer.add_scalar('scalar/valid_loss', valid_loss, i)
+                i += 1
                 model.train()
             # if (idx + 1) % 2000 == 0:
-            #     eval_model(valid_x, valid_y, vocab, model)
+            #     eval_model(valid_x, valid_y, tgt_vocab, model)
             # dump_tensors()
 
         adjust_lr(optimizer, epoch)
@@ -134,7 +137,7 @@ def train(train_x, train_y, valid_x, valid_y, model,
                       'lr': optimizer.param_groups[0]['lr']}
         torch.save(save_state, os.path.join(model_dir, 'params_v2_%d.pkl' % epoch))
         logging.info('Model saved in dir %s' % model_dir)
-        writer.close()
+    writer.close()
 
 
 def main():
@@ -146,35 +149,38 @@ def main():
     VALID_X = os.path.join(data_dir, 'train/valid.article.filter.txt')
     VALID_Y = os.path.join(data_dir, 'train/valid.title.filter.txt')
 
-    small_vocab_file = 'sumdata/small_vocab.json'
-    if os.path.exists(small_vocab_file):
-        small_vocab = json.load(open(small_vocab_file))
-    else:
-        small_vocab = build_vocab([TRAIN_X, TRAIN_Y], small_vocab_file, vocab_size=80000)
+    src_vocab_file = 'sumdata/src_vocab.txt'
+    if not os.path.exists(src_vocab_file):
+        build_vocab([TRAIN_X], src_vocab_file)
+    src_vocab = load_vocab(src_vocab_file, vocab_size=90000)
+    
+    tgt_vocab_file = 'sumdata/tgt_vocab.txt'
+    if not os.path.exists(tgt_vocab_file):
+        build_vocab([TRAIN_Y], tgt_vocab_file)
+    tgt_vocab = load_vocab(tgt_vocab_file)
 
     # emb_file = '/home/tiankeke/workspace/embeddings/giga-vec1.bin'
     # vocab, embeddings = load_word2vec_embedding(emb_file)
 
     max_src_len = 100
     max_tgt_len = 40
+    max_pos = 200
 
     bs = args.batch_size
     n_train = args.n_train
     n_valid = args.n_valid
 
-    vocab = small_vocab
-
-    train_x = BatchManager(load_data(TRAIN_X, max_src_len, n_train), bs, vocab)
-    train_y = BatchManager(load_data(TRAIN_Y, max_tgt_len, n_train), bs, vocab)
+    train_x = BatchManager(load_data(TRAIN_X, max_src_len, n_train), bs, src_vocab)
+    train_y = BatchManager(load_data(TRAIN_Y, max_tgt_len, n_train), bs, tgt_vocab)
     train_x, train_y = utils.shuffle(train_x, train_y)
 
-    valid_x = BatchManager(load_data(VALID_X, max_src_len, n_valid), bs, vocab)
-    valid_y = BatchManager(load_data(VALID_Y, max_tgt_len, n_valid), bs, vocab)
+    valid_x = BatchManager(load_data(VALID_X, max_src_len, n_valid), bs, src_vocab)
+    valid_y = BatchManager(load_data(VALID_Y, max_tgt_len, n_valid), bs, tgt_vocab)
     valid_x, valid_y = utils.shuffle(valid_x, valid_y)
     # model = Transformer(len(vocab), len(vocab), max_src_len, max_tgt_len, 1, 4, 256,
     #                     64, 64, 1024, src_tgt_emb_share=True, tgt_prj_wt_share=True).cuda()
-    model = Transformer(len(vocab), len(vocab), 200, 200, 2, 4, 256,
-                        1024, src_tgt_emb_share=True, tgt_prj_wt_share=True).cuda()
+    model = Transformer(len(src_vocab), len(tgt_vocab), max_pos, max_pos, 2, 4, 256,
+                        1024, src_tgt_emb_share=False, tgt_prj_wt_share=True).cuda()
     # model = TransformerShareEmbedding(len(vocab), max_src_len, 2, 4,
     #                                   256, 1024, False, True).cuda()
 
@@ -192,7 +198,7 @@ def main():
 
     # eval_model(valid_x, valid_y, vocab, model)
     train(train_x, train_y, valid_x, valid_y, model,
-          optimizer, vocab, scheduler, args.n_epochs, saved_state['epoch'])
+          optimizer, tgt_vocab, scheduler, args.n_epochs, saved_state['epoch'])
 
 
 if __name__ == '__main__':
